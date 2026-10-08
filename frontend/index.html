@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0D1117">
+    <meta name="description" content="Consulta maquinaria de construcción disponible y solicita tu contrato de alquiler con Constructora El Salvador.">
+    <title>Alquiler de maquinaria · Constructora El Salvador</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#catalogo">Ir al catálogo</a>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/" aria-label="Constructora El Salvador, inicio">
+          <span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 26V13l11-7 11 7v13H5Z"/><path d="M12 26V15h8v11M3 26h26"/></svg></span>
+          <span>CONSTRUCTORA<span class="brand-subtitle">EL SALVADOR</span></span>
+        </a>
+        <span class="header-label"><span class="status-dot" aria-hidden="true"></span> Alquiler de maquinaria</span>
+      </div>
+      <nav class="site-nav" aria-label="Secciones de la página">
+        <a class="nav-tab" href="#catalogo">Catálogo</a>
+        <a class="nav-tab" href="#contrato">Contrato</a>
+      </nav>
+    </header>
+
+    <main class="page-shell">
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">TU OBRA, EN MARCHA</p>
+        <h1 id="page-title">El equipo que tu<br>proyecto necesita.</h1>
+        <p class="intro-copy">Elige tu maquinaria, define las fechas y genera tu contrato de alquiler en un solo lugar.</p>
+        <div class="process" aria-label="Pasos del alquiler">
+          <span><b>01</b> Elige el equipo</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+          <span><b>02</b> Define las fechas</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+          <span><b>03</b> Recibe tu contrato</span>
+        </div>
+      </section>
+
+      <div class="workspace">
+        <section class="catalogue" id="catalogo" aria-labelledby="catalogue-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">CATÁLOGO</p><h2 id="catalogue-title">Maquinaria disponible</h2></div>
+            <span class="catalogue-count" id="catalogue-count" hidden></span>
+          </div>
+          <div id="catalogue-status" class="catalogue-status" role="status" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span><p>Cargando maquinaria…</p>
+          </div>
+          <div class="equipment-grid" id="equipment-grid" aria-busy="true"></div>
+          <p class="catalogue-note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.2"/></svg> Las tarifas se muestran en dólares por día. El día de inicio y el día de fin se incluyen en el alquiler.</p>
+        </section>
+
+        <aside class="booking-panel" id="contrato" aria-labelledby="booking-title">
+          <div class="panel-heading"><span class="step-label">TU ALQUILER</span><h2 id="booking-title">Configura tu contrato</h2><p>Completa los datos para reservar tu equipo.</p></div>
+          <section class="confirmation" id="confirmation" hidden tabindex="-1" aria-labelledby="confirmation-title">
+            <div class="success-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-8"/></svg></div>
+            <p class="eyebrow">CONTRATO CONFIRMADO</p>
+            <h3 id="confirmation-title">Tu obra puede seguir.</h3>
+            <p class="confirmation-copy">El contrato se guardó correctamente.</p>
+            <dl class="confirmation-details" id="confirmation-details"></dl>
+            <div class="contract-id"><span>Número de contrato</span><code id="contract-id"></code></div>
+            <button class="primary-button" id="new-contract" type="button">Crear otro contrato <span aria-hidden="true">→</span></button>
+          </section>
+          <form id="booking-form" novalidate>
+            <div class="selected-equipment" id="selected-equipment"><span class="selected-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18h16M7 18V9h10v9M9 9V5h6v4"/></svg></span><div><span class="selection-label">EQUIPO SELECCIONADO</span><p id="selected-name">Selecciona una máquina del catálogo</p></div></div>
+            <fieldset id="booking-fields">
+              <legend class="sr-only">Datos del contrato de alquiler</legend>
+              <div class="field"><label for="cliente">Nombre del cliente <span aria-hidden="true">*</span></label><input id="cliente" name="cliente" type="text" autocomplete="name" required maxlength="160" placeholder="Nombre completo o empresa" aria-describedby="cliente-error"><p class="field-error" id="cliente-error" hidden></p></div>
+              <div class="date-fields">
+                <div class="field"><label for="fecha_inicio">Fecha de inicio <span aria-hidden="true">*</span></label><input id="fecha_inicio" name="fecha_inicio" type="date" required aria-describedby="fecha_inicio-error"><p class="field-error" id="fecha_inicio-error" hidden></p></div>
+                <div class="field"><label for="fecha_fin">Fecha de fin <span aria-hidden="true">*</span></label><input id="fecha_fin" name="fecha_fin" type="date" required aria-describedby="fecha_fin-error"><p class="field-error" id="fecha_fin-error" hidden></p></div>
+              </div>
+            </fieldset>
+            <div class="estimate" aria-live="polite" aria-atomic="true">
+              <div><span>Tarifa diaria</span><strong id="daily-rate">—</strong></div>
+              <div><span>Duración del alquiler</span><strong id="rental-days">—</strong></div>
+              <div class="estimate-total"><span>Total estimado</span><strong id="estimated-total">—</strong></div>
+            </div>
+            <p class="form-error" id="form-error" role="alert" hidden></p>
+            <button class="primary-button" id="submit-contract" type="submit" disabled>Generar contrato <span aria-hidden="true">→</span></button>
+            <p class="form-note" id="form-note">Primero elige una máquina disponible.</p>
+          </form>
+        </aside>
+      </div>
+    </main>
+    <footer class="site-footer"><span>Constructora El Salvador</span><span>Maquinaria para construir lo que sigue.</span></footer>
+    <noscript><div class="noscript">Activa JavaScript en tu navegador para consultar la maquinaria y generar un contrato.</div></noscript>
+  </body>
+</html>

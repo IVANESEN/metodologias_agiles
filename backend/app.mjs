@@ -123,7 +123,8 @@ export async function findMachinery(database, filters) {
     const start = parameter(filters.fecha_inicio);
     const end = parameter(filters.fecha_fin);
     conditions.push(`NOT EXISTS (
-      SELECT 1 FROM contrato c WHERE c.maquinaria_id = m.id AND c.estado = 'CONFIRMADO'
+      SELECT 1 FROM contrato_maquinaria cm JOIN contrato c ON c.id = cm.contrato_id
+      WHERE cm.maquinaria_id = m.id AND c.estado = 'CONFIRMADO'
       AND c.fecha_inicio <= ${end}::date AND c.fecha_fin >= ${start}::date
     )`);
   }
@@ -140,8 +141,15 @@ export function validateContract(body) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos del contrato.');
   }
   const fields = {};
-  if (!Number.isInteger(body.maquinaria_id) || body.maquinaria_id < 1 || body.maquinaria_id > 2_147_483_647) {
-    fields.maquinaria_id = 'Selecciona una maquinaria válida.';
+  const hasMultiple = Object.hasOwn(body, 'maquinaria_ids');
+  const hasSingle = Object.hasOwn(body, 'maquinaria_id');
+  const ids = hasMultiple ? body.maquinaria_ids : [body.maquinaria_id];
+  if (hasMultiple && hasSingle) {
+    fields.maquinaria_ids = 'Envía maquinaria_ids o maquinaria_id, sin combinar ambos.';
+  } else if (!Array.isArray(ids) || ids.length === 0 ||
+    ids.some((id) => !Number.isInteger(id) || id < 1 || id > 2_147_483_647) ||
+    new Set(ids).size !== ids.length) {
+    fields[hasSingle ? 'maquinaria_id' : 'maquinaria_ids'] = 'Selecciona una o más maquinarias válidas, sin repetirlas.';
   }
   const cliente = typeof body.cliente === 'string' ? body.cliente.trim() : '';
   if (cliente.length < 2 || cliente.length > 160 || /[\u0000-\u001f\u007f]/.test(cliente)) {
@@ -162,47 +170,75 @@ export function validateContract(body) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos del contrato.', fields);
   }
   return {
-    maquinaria_id: body.maquinaria_id, cliente, ciudad,
+    maquinaria_ids: ids.toSorted((a, b) => a - b), cliente, ciudad,
     fecha_inicio: body.fecha_inicio, fecha_fin: body.fecha_fin,
     dias: Math.round((end - start) / DAY_MS) + 1,
   };
 }
 
-function normalizeContract(row) {
-  return { ...row, dias: Number(row.dias), tarifa_diaria: Number(row.tarifa_diaria), total: Number(row.total) };
+async function contractWithMachinery(database, row) {
+  const { rows } = await database.query(
+    `SELECT maquinaria_id, maquinaria_nombre, tarifa_diaria, tarifa_diaria * $2::integer AS total
+     FROM contrato_maquinaria WHERE contrato_id = $1 ORDER BY maquinaria_id`,
+    [row.id, row.dias],
+  );
+  return {
+    ...row, dias: Number(row.dias), tarifa_diaria: Number(row.tarifa_diaria), total: Number(row.total),
+    maquinarias: rows.map((machine) => ({
+      ...machine, tarifa_diaria: Number(machine.tarifa_diaria), total: Number(machine.total),
+    })),
+  };
 }
 
 export async function saveContract(database, input) {
   return database.transaction(async (tx) => {
-    // Every reservation writer locks this row before checking overlap. On cloud
-    // PostgreSQL a second writer waits, then sees the first committed contract.
+    // All writers lock every selected machine in the same order. Shared machines
+    // serialize concurrent rentals without cycles between multi-machine writers.
     const machineResult = await tx.query(
-      'SELECT id, nombre, tarifa_diaria, disponible FROM maquinaria WHERE id = $1 FOR UPDATE',
-      [input.maquinaria_id],
+      `SELECT id, nombre, tarifa_diaria, disponible FROM maquinaria
+       WHERE id = ANY($1::integer[]) ORDER BY id FOR UPDATE`,
+      [input.maquinaria_ids],
     );
-    const machine = machineResult.rows[0];
-    if (!machine) throw new ApiError(404, 'MACHINERY_NOT_FOUND', 'La maquinaria seleccionada no existe.');
-    if (!machine.disponible) throw new ApiError(409, 'MACHINERY_UNAVAILABLE', 'Esta maquinaria no está disponible para alquiler.');
+    const machines = machineResult.rows;
+    if (machines.length !== input.maquinaria_ids.length) {
+      throw new ApiError(404, 'MACHINERY_NOT_FOUND', 'Una de las maquinarias seleccionadas no existe.');
+    }
+    const inactive = machines.find((machine) => !machine.disponible);
+    if (inactive) {
+      throw new ApiError(409, 'MACHINERY_UNAVAILABLE', `${inactive.nombre} no está disponible para alquiler.`);
+    }
     const overlap = await tx.query(
-      `SELECT id FROM contrato WHERE maquinaria_id = $1 AND estado = 'CONFIRMADO'
-       AND fecha_inicio <= $3::date AND fecha_fin >= $2::date LIMIT 1`,
-      [input.maquinaria_id, input.fecha_inicio, input.fecha_fin],
+      `SELECT cm.maquinaria_id FROM contrato_maquinaria cm JOIN contrato c ON c.id = cm.contrato_id
+       WHERE cm.maquinaria_id = ANY($1::integer[]) AND c.estado = 'CONFIRMADO'
+       AND c.fecha_inicio <= $3::date AND c.fecha_fin >= $2::date ORDER BY cm.maquinaria_id LIMIT 1`,
+      [input.maquinaria_ids, input.fecha_inicio, input.fecha_fin],
     );
     if (overlap.rows.length) {
-      throw new ApiError(409, 'DATE_CONFLICT', 'La maquinaria ya tiene un contrato en esas fechas. Selecciona otro período.');
+      const busy = machines.find((machine) => machine.id === overlap.rows[0].maquinaria_id);
+      throw new ApiError(409, 'DATE_CONFLICT', `${busy.nombre} ya tiene un contrato en esas fechas. Selecciona otro período.`);
     }
+    // PostgreSQL sums numeric tariffs exactly; client totals never set the price.
+    const tariff = await tx.query('SELECT SUM(tarifa_diaria) AS tarifa FROM maquinaria WHERE id = ANY($1::integer[])',
+      [input.maquinaria_ids]);
     const id = randomUUID();
+    const firstMachine = machines[0];
     const result = await tx.query(
       `INSERT INTO contrato
        (id, maquinaria_id, maquinaria_nombre, cliente, fecha_inicio, fecha_fin, dias, tarifa_diaria, total, ciudad)
        VALUES ($1, $2, $3, $4, $5::date, $6::date, $7::integer, $8::numeric, $7::integer * $8::numeric, $9)
        RETURNING ${CONTRACT_COLUMNS}`,
-      [id, input.maquinaria_id, machine.nombre, input.cliente, input.fecha_inicio,
-        input.fecha_fin, input.dias, machine.tarifa_diaria, input.ciudad],
+      [id, firstMachine.id, firstMachine.nombre, input.cliente, input.fecha_inicio,
+        input.fecha_fin, input.dias, tariff.rows[0].tarifa, input.ciudad],
+    );
+    await tx.query(
+      `INSERT INTO contrato_maquinaria (contrato_id, maquinaria_id, maquinaria_nombre, tarifa_diaria)
+       SELECT $1::uuid, id, nombre, tarifa_diaria FROM maquinaria
+       WHERE id = ANY($2::integer[]) ORDER BY id`,
+      [id, input.maquinaria_ids],
     );
     // This is the last city entered in a contract, not a live physical location.
-    await tx.query('UPDATE maquinaria SET ubicacion = $2 WHERE id = $1', [input.maquinaria_id, input.ciudad]);
-    return normalizeContract(result.rows[0]);
+    await tx.query('UPDATE maquinaria SET ubicacion = $2 WHERE id = ANY($1::integer[])', [input.maquinaria_ids, input.ciudad]);
+    return contractWithMachinery(tx, result.rows[0]);
   });
 }
 
@@ -265,7 +301,7 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         const { rows } = await database.query(`SELECT ${CONTRACT_COLUMNS} FROM contrato WHERE id = $1`, [id]);
         if (!rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
-        return json(response, 200, normalizeContract(rows[0]));
+        return json(response, 200, await contractWithMachinery(database, rows[0]));
       }
       if (path.startsWith('/api/')) {
         const known = ['/api/maquinaria', '/api/contratos', '/api/health'].includes(path) || path.startsWith('/api/contratos/');

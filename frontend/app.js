@@ -20,6 +20,9 @@ const ui = {
   fin: document.getElementById('fecha_fin'),
   selection: document.getElementById('selected-equipment'),
   selectedName: document.getElementById('selected-name'),
+  selectedList: document.getElementById('selected-list'),
+  clearSelection: document.getElementById('clear-selection'),
+  selectionError: document.getElementById('selection-error'),
   rate: document.getElementById('daily-rate'),
   days: document.getElementById('rental-days'),
   total: document.getElementById('estimated-total'),
@@ -28,11 +31,12 @@ const ui = {
   note: document.getElementById('form-note'),
   confirmation: document.getElementById('confirmation'),
   details: document.getElementById('confirmation-details'),
+  confirmedEquipment: document.getElementById('confirmed-equipment'),
   contractId: document.getElementById('contract-id'),
   newContract: document.getElementById('new-contract'),
 };
 const emptyFilters = () => ({ tipo: '', ubicacion: '', fecha_inicio: '', fecha_fin: '' });
-const state = { equipment: [], selected: null, loading: false, submitting: false, filters: emptyFilters(), types: new Set(), typesInitialized: false, catalogueRequest: 0, catalogueController: null };
+const state = { equipment: [], selected: new Map(), loading: false, submitting: false, filters: emptyFilters(), types: new Set(), typesInitialized: false, catalogueRequest: 0, catalogueController: null };
 const money = new Intl.NumberFormat('es-SV', { style: 'currency', currency: 'USD' });
 const dateDisplay = new Intl.DateTimeFormat('es-SV', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const DAY_MS = 86400000;
@@ -76,6 +80,9 @@ function resetDates() {
 function clearErrors() {
   ui.error.hidden = true;
   ui.error.textContent = '';
+  ui.selection.removeAttribute('aria-invalid');
+  ui.selectionError.textContent = '';
+  ui.selectionError.hidden = true;
   for (const field of [ui.cliente, ui.ciudad, ui.inicio, ui.fin]) {
     field.removeAttribute('aria-invalid');
     const message = document.getElementById(`${field.name}-error`);
@@ -96,30 +103,78 @@ function formError(message) {
   ui.error.hidden = false;
 }
 
+function selectionError(message) {
+  ui.selection.setAttribute('aria-invalid', 'true');
+  ui.selectionError.textContent = message;
+  ui.selectionError.hidden = false;
+}
+
+function renderSelection() {
+  const count = state.selected.size;
+  ui.selectedName.textContent = count ? `${count} ${count === 1 ? 'máquina seleccionada' : 'máquinas seleccionadas'}` : 'Selecciona una o varias máquinas del catálogo';
+  ui.selection.classList.toggle('has-selection', count > 0);
+  ui.selectedList.hidden = !count;
+  ui.clearSelection.hidden = !count;
+  ui.clearSelection.disabled = state.submitting;
+  ui.selectedList.replaceChildren();
+  for (const item of state.selected.values()) {
+    const row = element('li', '');
+    const description = element('div', '');
+    description.append(element('strong', '', item.nombre), element('span', '', `${money.format(item.tarifa_diaria)} / día`));
+    if (!item.disponible) description.append(element('span', 'selection-unavailable', 'Disponibilidad pendiente de resolver. Quita este equipo o cambia las fechas.'));
+    const remove = element('button', 'remove-equipment', 'Quitar');
+    remove.type = 'button';
+    remove.id = `remove-equipment-${item.id}`;
+    remove.disabled = state.submitting;
+    remove.setAttribute('aria-label', `Quitar ${item.nombre} del contrato`);
+    remove.addEventListener('click', () => removeEquipment(item.id, true));
+    row.append(description, remove);
+    ui.selectedList.append(row);
+  }
+}
+
 function updateEstimate() {
-  ui.selectedName.textContent = state.selected ? state.selected.nombre : 'Selecciona una máquina del catálogo';
-  ui.selection.classList.toggle('has-selection', Boolean(state.selected));
+  renderSelection();
+  const count = state.selected.size;
+  const rate = [...state.selected.values()].reduce((sum, item) => sum + item.tarifa_diaria, 0);
   const days = inclusiveDays();
-  ui.rate.textContent = state.selected ? money.format(state.selected.tarifa_diaria) : '—';
+  ui.rate.textContent = count ? money.format(rate) : '—';
   ui.days.textContent = days ? `${days} ${days === 1 ? 'día' : 'días'}` : '—';
-  ui.total.textContent = state.selected && days ? money.format(state.selected.tarifa_diaria * days) : '—';
-  ui.submit.disabled = !state.selected || state.loading || state.submitting;
+  ui.total.textContent = count && days ? money.format(rate * days) : '—';
+  ui.submit.disabled = !count || state.loading || state.submitting;
   ui.newContract.disabled = state.submitting;
   for (const control of ui.filters.querySelectorAll('input, select, button')) control.disabled = state.submitting;
-  if (!state.selected) ui.note.textContent = 'Primero elige una máquina disponible.';
-  else if (state.filters.fecha_inicio) ui.note.textContent = `La disponibilidad consultada corresponde del ${state.filters.fecha_inicio} al ${state.filters.fecha_fin}. Si cambias las fechas del contrato, se comprobarán al guardarlo.`;
-  else ui.note.textContent = 'Consulta un periodo para comprobar su disponibilidad. Las fechas del contrato se verificarán al guardarlo.';
+  if (!count) ui.note.textContent = 'Primero elige una o varias máquinas disponibles.';
+  else if (state.filters.fecha_inicio) ui.note.textContent = `Esta búsqueda comprueba del ${state.filters.fecha_inicio} al ${state.filters.fecha_fin}. Todas las máquinas elegidas se comprobarán juntas para las fechas del contrato al guardarlo.`;
+  else ui.note.textContent = 'Todas las máquinas comparten las fechas del contrato. Su disponibilidad se comprobará al guardar; puedes conservar tu selección al cambiar los filtros.';
+}
+
+function removeEquipment(id, focusSummary = false) {
+  if (state.submitting) return;
+  state.selected.delete(id);
+  renderEquipment();
+  updateEstimate();
+  if (focusSummary) {
+    const nextButton = ui.selectedList.querySelector('button');
+    (nextButton || ui.selection).focus({ preventScroll: true });
+  }
 }
 
 function selectEquipment(item) {
-  if (!item.disponible || state.loading || state.submitting) return;
-  state.selected = item;
-  if (state.filters.fecha_inicio && state.filters.fecha_fin) {
+  if (state.loading || state.submitting) return;
+  if (state.selected.has(item.id)) {
+    removeEquipment(item.id);
+    document.getElementById(`select-equipment-${item.id}`)?.focus({ preventScroll: true });
+    return;
+  }
+  if (!item.disponible) return;
+  const firstSelection = state.selected.size === 0;
+  state.selected.set(item.id, item);
+  if (firstSelection && state.filters.fecha_inicio && state.filters.fecha_fin) {
     ui.inicio.value = state.filters.fecha_inicio;
     ui.fin.value = state.filters.fecha_fin;
     ui.fin.min = state.filters.fecha_inicio;
   }
-  clearErrors();
   if (!ui.confirmation.hidden) {
     ui.confirmation.hidden = true;
     ui.form.hidden = false;
@@ -132,7 +187,7 @@ function selectEquipment(item) {
 function renderEquipment() {
   ui.grid.replaceChildren();
   for (const item of state.equipment) {
-    const selected = state.selected?.id === item.id;
+    const selected = state.selected.has(item.id);
     const card = element('article', `equipment-card${selected ? ' is-selected' : ''}${item.disponible ? '' : ' is-unavailable'}`);
     const top = element('div', 'equipment-top');
     const icon = element('span', 'equipment-icon');
@@ -143,12 +198,12 @@ function renderEquipment() {
     const bottom = element('div', 'equipment-bottom');
     const price = element('div', 'equipment-price');
     price.append(element('strong', '', money.format(item.tarifa_diaria)), element('span', '', '/ día'));
-    const button = element('button', 'select-button', item.disponible ? selected ? 'Seleccionado ✓' : 'Seleccionar' : 'No disponible');
+    const button = element('button', 'select-button', selected ? 'Deseleccionar' : item.disponible ? 'Seleccionar' : 'No disponible');
     button.type = 'button';
     button.id = `select-equipment-${item.id}`;
-    button.disabled = !item.disponible || state.loading || state.submitting;
+    button.disabled = (!item.disponible && !selected) || state.loading || state.submitting;
     button.setAttribute('aria-pressed', String(selected));
-    button.setAttribute('aria-label', `${selected ? 'Equipo seleccionado:' : 'Seleccionar'} ${item.nombre}`);
+    button.setAttribute('aria-label', `${selected ? 'Deseleccionar' : 'Seleccionar'} ${item.nombre}`);
     button.addEventListener('click', () => selectEquipment(item));
     bottom.append(price, button);
     card.append(bottom);
@@ -223,7 +278,8 @@ async function loadEquipment(filters = state.filters) {
     if (requestId !== state.catalogueRequest) return;
     state.filters = applied;
     state.equipment = equipment;
-    if (state.selected) state.selected = equipment.find(item => item.id === state.selected.id && item.disponible) || null;
+    // Un filtro puede ocultar equipos elegidos; su ausencia no demuestra que estén ocupados.
+    for (const item of equipment) if (state.selected.has(item.id)) state.selected.set(item.id, item);
     ui.count.textContent = `${equipment.length} ${equipment.length === 1 ? 'resultado' : 'resultados'}`;
     ui.count.hidden = false;
     if (equipment.length === 0) {
@@ -235,7 +291,6 @@ async function loadEquipment(filters = state.filters) {
   } catch (error) {
     if (requestId !== state.catalogueRequest || error.name === 'AbortError') return;
     state.equipment = [];
-    state.selected = null;
     const retry = element('button', 'retry-button', 'Volver a cargar');
     retry.type = 'button';
     retry.addEventListener('click', () => loadEquipment(applied));
@@ -255,8 +310,18 @@ function validateForm() {
   clearErrors();
   let firstInvalid = null;
   const fail = (field, message) => { fieldError(field, message); firstInvalid ||= field; };
-  if (!state.selected || !state.selected.disponible) {
-    formError('Selecciona una máquina disponible del catálogo.');
+  if (!state.selected.size) {
+    const message = 'Selecciona al menos una máquina para el contrato.';
+    formError(message);
+    selectionError(message);
+    ui.selection.focus();
+    return false;
+  }
+  if ([...state.selected.values()].some(item => !item.disponible)) {
+    const message = 'Hay una máquina seleccionada que no está disponible. Quítala o cambia el periodo y vuelve a consultar.';
+    formError(message);
+    selectionError(message);
+    ui.selection.focus();
     return false;
   }
   const client = ui.cliente.value.trim();
@@ -281,17 +346,45 @@ function confirmationRow(label, value, className = '') {
   return row;
 }
 
+function validContract(contract, payload) {
+  if (!contract || typeof contract.id !== 'string' || !contract.id || contract.estado !== 'CONFIRMADO' || typeof contract.cliente !== 'string' || typeof contract.ciudad !== 'string' || contract.cliente !== payload.cliente || contract.ciudad !== payload.ciudad || contract.fecha_inicio !== payload.fecha_inicio || contract.fecha_fin !== payload.fecha_fin) return false;
+  const start = dateValue(contract.fecha_inicio);
+  const end = dateValue(contract.fecha_fin);
+  if (start === null || end === null || end < start || !Number.isInteger(contract.dias) || contract.dias !== Math.round((end - start) / DAY_MS) + 1) return false;
+  const validMoney = value => Number.isFinite(value) && value >= 0 && Number.isSafeInteger(Math.round(value * 100));
+  const sameMoney = (a, b) => Math.round(a * 100) === Math.round(b * 100);
+  if (!validMoney(contract.tarifa_diaria) || !validMoney(contract.total) || !Array.isArray(contract.maquinarias) || contract.maquinarias.length !== payload.maquinaria_ids.length || !contract.maquinarias.length) return false;
+  const expectedIds = new Set(payload.maquinaria_ids);
+  const returnedIds = new Set();
+  let dailyRate = 0;
+  let total = 0;
+  for (const item of contract.maquinarias) {
+    if (!item || !Number.isSafeInteger(item.maquinaria_id) || item.maquinaria_id < 1 || !expectedIds.has(item.maquinaria_id) || returnedIds.has(item.maquinaria_id) || typeof item.maquinaria_nombre !== 'string' || !item.maquinaria_nombre.trim() || !validMoney(item.tarifa_diaria) || !validMoney(item.total) || !sameMoney(item.total, item.tarifa_diaria * contract.dias)) return false;
+    returnedIds.add(item.maquinaria_id);
+    dailyRate += item.tarifa_diaria;
+    total += item.total;
+  }
+  const firstItem = contract.maquinarias[0];
+  return contract.maquinaria_id === firstItem.maquinaria_id && contract.maquinaria_nombre === firstItem.maquinaria_nombre && sameMoney(contract.tarifa_diaria, dailyRate) && sameMoney(contract.total, total);
+}
+
 function showConfirmation(contract) {
   const start = dateValue(contract.fecha_inicio);
   const end = dateValue(contract.fecha_fin);
+  ui.confirmedEquipment.replaceChildren();
+  for (const item of contract.maquinarias) {
+    const row = element('li', '');
+    row.append(element('strong', '', item.maquinaria_nombre), element('p', '', `${money.format(item.tarifa_diaria)} / día`), element('p', 'confirmed-item-total', `Total del equipo: ${money.format(item.total)}`));
+    ui.confirmedEquipment.append(row);
+  }
   ui.details.replaceChildren(
-    confirmationRow('Equipo', contract.maquinaria_nombre),
+    confirmationRow('Máquinas', String(contract.maquinarias.length)),
     confirmationRow('Cliente', contract.cliente),
     confirmationRow('Ciudad de la obra', contract.ciudad || 'Ciudad por definir'),
     confirmationRow('Inicio', dateDisplay.format(new Date(start))),
     confirmationRow('Fin', dateDisplay.format(new Date(end))),
     confirmationRow('Duración', `${contract.dias} ${contract.dias === 1 ? 'día' : 'días'}`),
-    confirmationRow('Tarifa diaria', money.format(contract.tarifa_diaria)),
+    confirmationRow('Tarifa diaria total', money.format(contract.tarifa_diaria)),
     confirmationRow('Total', money.format(contract.total), 'confirmed-total'),
   );
   ui.contractId.textContent = contract.id;
@@ -308,7 +401,11 @@ function applyServerErrors(error) {
   for (const [name, value] of Object.entries(error.fields)) {
     const field = fieldMap[name];
     const message = Array.isArray(value) ? value.join(' ') : typeof value === 'string' ? value : '';
-    if (field && message) { fieldError(field, message); firstInvalid ||= field; }
+    if ((name === 'maquinaria_ids' || name === 'maquinaria_id') && message) {
+      selectionError(message);
+      formError(message);
+      if (!firstInvalid) ui.selection.focus();
+    } else if (field && message) { fieldError(field, message); firstInvalid ||= field; }
   }
   if (firstInvalid) firstInvalid.focus();
 }
@@ -316,7 +413,7 @@ function applyServerErrors(error) {
 ui.form.addEventListener('submit', async event => {
   event.preventDefault();
   if (state.submitting || state.loading || !validateForm()) return;
-  const payload = { maquinaria_id: state.selected.id, cliente: ui.cliente.value.trim(), ciudad: ui.ciudad.value.trim(), fecha_inicio: ui.inicio.value, fecha_fin: ui.fin.value };
+  const payload = { maquinaria_ids: [...state.selected.keys()], cliente: ui.cliente.value.trim(), ciudad: ui.ciudad.value.trim(), fecha_inicio: ui.inicio.value, fecha_fin: ui.fin.value };
   state.submitting = true;
   ui.fields.disabled = true;
   ui.submit.textContent = 'Generando contrato…';
@@ -326,15 +423,16 @@ ui.form.addEventListener('submit', async event => {
   try {
     const response = await fetch('/api/contratos', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload) });
     const contract = await readResponse(response);
-    if (response.status !== 201 || !contract || typeof contract.id !== 'string' || !contract.id || contract.estado !== 'CONFIRMADO' || dateValue(contract.fecha_inicio) === null || dateValue(contract.fecha_fin) === null || typeof contract.cliente !== 'string' || (contract.ciudad !== null && typeof contract.ciudad !== 'string') || typeof contract.maquinaria_nombre !== 'string' || !Number.isInteger(contract.dias) || contract.dias < 1 || !Number.isFinite(contract.tarifa_diaria) || contract.tarifa_diaria < 0 || !Number.isFinite(contract.total) || contract.total < 0) {
+    if (response.status !== 201 || !validContract(contract, payload)) {
       throw new Error('La respuesta del contrato no pudo verificarse. Revisa el servidor antes de volver a enviarlo.');
     }
     showConfirmation(contract);
-    state.selected = null;
+    state.selected.clear();
     await loadEquipment();
   } catch (error) {
     const message = error instanceof TypeError ? 'No se recibió la confirmación del servidor. Comprueba tu conexión antes de volver a enviar la solicitud.' : error.message;
     formError(message);
+    if (error.status === 409) selectionError('No se pudo reservar toda la selección. Revisa las máquinas elegidas o cambia las fechas; no se confirmó este contrato.');
     ui.fields.disabled = false;
     applyServerErrors(error);
     if (error.status === 409) await loadEquipment();
@@ -363,7 +461,7 @@ for (const field of [ui.cliente, ui.ciudad]) field.addEventListener('input', () 
 });
 ui.newContract.addEventListener('click', () => {
   if (state.submitting) return;
-  state.selected = null;
+  state.selected.clear();
   ui.form.reset();
   resetDates();
   clearErrors();
@@ -372,6 +470,13 @@ ui.newContract.addEventListener('click', () => {
   renderEquipment();
   updateEstimate();
   ui.cliente.focus();
+});
+ui.clearSelection.addEventListener('click', () => {
+  if (state.submitting) return;
+  state.selected.clear();
+  renderEquipment();
+  updateEstimate();
+  ui.selection.focus({ preventScroll: true });
 });
 
 function clearFilterErrors() {

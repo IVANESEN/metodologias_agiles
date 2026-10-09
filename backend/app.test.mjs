@@ -106,6 +106,7 @@ test('API de alquiler con PostgreSQL embebido y persistencia real', async (t) =>
       id: 'uuid', maquinaria_id: 1, maquinaria_nombre: 'CAT 336', cliente: 'Cliente de prueba', ciudad: 'San Salvador',
       fecha_inicio: valid.fecha_inicio, fecha_fin: valid.fecha_fin,
       dias: 3, tarifa_diaria: 450, total: 1350, estado: 'CONFIRMADO',
+      maquinarias: [{ maquinaria_id: 1, maquinaria_nombre: 'CAT 336', tarifa_diaria: 450, total: 1350 }],
     });
     assert.equal(result.response.headers.get('location'), `/api/contratos/${created.id}`);
     const read = await request(`/api/contratos/${created.id}`);
@@ -321,7 +322,9 @@ test('API de alquiler con PostgreSQL embebido y persistencia real', async (t) =>
 test('la actualización de esquema conserva equipos y contratos históricos sin inventar ciudades', async (t) => {
   const folder = await mkdtemp(join(tmpdir(), 'constructora-upgrade-'));
   const database = await createDatabase({ connectionString: '', dataDir: join(folder, 'postgres'), production: false });
+  let server;
   t.after(async () => {
+    await closeServer(server);
     await database.close();
     await rm(folder, { recursive: true, force: true });
   });
@@ -351,12 +354,13 @@ test('la actualización de esquema conserva equipos y contratos históricos sin 
       (id, maquinaria_id, maquinaria_nombre, cliente, fecha_inicio, fecha_fin, dias, tarifa_diaria, total)
       VALUES ('00000000-0000-4000-8000-000000000099', 1, 'Equipo existente', 'Cliente histórico',
         '2026-10-01', '2026-10-02', 2, 999, 1998);
+    UPDATE maquinaria SET nombre = 'Nombre actualizado', tarifa_diaria = 1100 WHERE id = 1;
   `);
   await initializeDatabase(database);
   await initializeDatabase(database);
   const machine = (await database.query('SELECT nombre, tarifa_diaria, disponible, ubicacion FROM maquinaria WHERE id = 1')).rows[0];
   assert.deepEqual({ ...machine, tarifa_diaria: Number(machine.tarifa_diaria) }, {
-    nombre: 'Equipo existente', tarifa_diaria: 999, disponible: false, ubicacion: null,
+    nombre: 'Nombre actualizado', tarifa_diaria: 1100, disponible: false, ubicacion: null,
   });
   const contracts = (await database.query(`SELECT cliente, fecha_inicio::text, fecha_fin::text,
     dias, total, ciudad FROM contrato`)).rows;
@@ -364,9 +368,219 @@ test('la actualización de esquema conserva equipos y contratos históricos sin 
   assert.deepEqual({ ...contracts[0], total: Number(contracts[0].total) }, {
     cliente: 'Cliente histórico', fecha_inicio: '2026-10-01', fecha_fin: '2026-10-02', dias: 2, total: 1998, ciudad: null,
   });
+  const details = (await database.query('SELECT maquinaria_id, maquinaria_nombre, tarifa_diaria FROM contrato_maquinaria')).rows;
+  assert.equal(details.length, 1);
+  assert.deepEqual({ ...details[0], tarifa_diaria: Number(details[0].tarifa_diaria) }, {
+    maquinaria_id: 1, maquinaria_nombre: 'Equipo existente', tarifa_diaria: 999,
+  });
   await database.query('UPDATE maquinaria SET ubicacion = $1 WHERE id = 1', ['San Miguel']);
   await initializeDatabase(database);
   assert.equal((await database.query('SELECT ubicacion FROM maquinaria WHERE id = 1')).rows[0].ubicacion, 'San Miguel');
+  assert.equal((await database.query('SELECT COUNT(*)::integer AS count FROM contrato_maquinaria')).rows[0].count, 1);
+  server = createServer({ database });
+  const base = await listen(server);
+  const response = await fetch(base + '/api/contratos/00000000-0000-4000-8000-000000000099');
+  assert.equal(response.status, 200);
+  const historical = await response.json();
+  assert.equal(historical.ciudad, null);
+  assert.equal(historical.total, 1998);
+  assert.deepEqual(historical.maquinarias, [
+    { maquinaria_id: 1, maquinaria_nombre: 'Equipo existente', tarifa_diaria: 999, total: 1998 },
+  ]);
+});
+
+test('un contrato reúne todas las máquinas con precios reales y escrituras atómicas', async (t) => {
+  const folder = await mkdtemp(join(tmpdir(), 'constructora-multiple-'));
+  const database = await createDatabase({ connectionString: '', dataDir: join(folder, 'postgres'), production: false });
+  await initializeDatabase(database);
+  const server = createServer({ database, logger: {} });
+  const base = await listen(server);
+  t.after(async () => {
+    await closeServer(server);
+    await database.close();
+    await rm(folder, { recursive: true, force: true });
+  });
+  const input = {
+    maquinaria_ids: [2, 1], cliente: 'Cliente múltiple', ciudad: 'Nueva Concepción',
+    fecha_inicio: '2029-01-10', fecha_fin: '2029-01-12',
+  };
+  async function request(path, body) {
+    const response = await fetch(base + path, body === undefined ? undefined : {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    return { response, body: await response.json() };
+  }
+  async function counts() {
+    const result = await database.query(`SELECT
+      (SELECT COUNT(*)::integer FROM contrato) AS contratos,
+      (SELECT COUNT(*)::integer FROM contrato_maquinaria) AS detalles`);
+    return result.rows[0];
+  }
+  async function locations() {
+    return (await database.query('SELECT id, ubicacion FROM maquinaria ORDER BY id')).rows;
+  }
+  let created;
+
+  await t.test('POST crea un UUID, dos detalles ordenados y un total calculado por el servidor', async () => {
+    const result = await request('/api/contratos', { ...input, total: 1, tarifa_diaria: 1 });
+    assert.equal(result.response.status, 201);
+    created = result.body;
+    assert.match(created.id, /^[0-9a-f-]{36}$/);
+    assert.equal(result.response.headers.get('location'), `/api/contratos/${created.id}`);
+    assert.equal(created.maquinaria_id, 1);
+    assert.equal(created.maquinaria_nombre, 'CAT 336');
+    assert.equal(created.dias, 3);
+    assert.equal(created.tarifa_diaria, 725);
+    assert.equal(created.total, 2175);
+    assert.deepEqual(created.maquinarias, [
+      { maquinaria_id: 1, maquinaria_nombre: 'CAT 336', tarifa_diaria: 450, total: 1350 },
+      { maquinaria_id: 2, maquinaria_nombre: 'JCB 3CX', tarifa_diaria: 275, total: 825 },
+    ]);
+    assert.deepEqual(await counts(), { contratos: 1, detalles: 2 });
+    const stored = await request(`/api/contratos/${created.id}`);
+    assert.deepEqual(stored.body, created);
+    assert.deepEqual(await locations(), [
+      { id: 1, ubicacion: 'Nueva Concepción' }, { id: 2, ubicacion: 'Nueva Concepción' },
+    ]);
+    const hidden = await request('/api/maquinaria?disponible=true&fecha_inicio=2029-01-11&fecha_fin=2029-01-11');
+    assert.deepEqual(hidden.body, []);
+    const nextDay = await request('/api/maquinaria?disponible=true&fecha_inicio=2029-01-13&fecha_fin=2029-01-13');
+    assert.deepEqual(nextDay.body.map((machine) => machine.id), [1, 2]);
+    const scalarConflict = await request('/api/contratos', {
+      ...valid, maquinaria_id: 2, fecha_inicio: input.fecha_inicio, fecha_fin: input.fecha_fin,
+    });
+    assert.equal(scalarConflict.response.status, 409);
+    assert.equal(scalarConflict.body.error.code, 'DATE_CONFLICT');
+  });
+
+  await t.test('selección vacía, duplicada, inválida o ambigua no escribe datos', async () => {
+    const before = await counts();
+    const cities = await locations();
+    for (const machinery_ids of [[], [1, 1], ['1'], [0], [-1], [1.5], [null], [2_147_483_648], null, 1]) {
+      const result = await request('/api/contratos', { ...input, maquinaria_ids: machinery_ids });
+      assert.equal(result.response.status, 400);
+      assert.ok(result.body.error.fields.maquinaria_ids);
+    }
+    const ambiguous = await request('/api/contratos', { ...input, maquinaria_id: 1 });
+    assert.equal(ambiguous.response.status, 400);
+    assert.ok(ambiguous.body.error.fields.maquinaria_ids);
+    assert.deepEqual(await counts(), before);
+    assert.deepEqual(await locations(), cities);
+  });
+
+  await t.test('una máquina inexistente o inactiva rechaza toda la selección', async () => {
+    const before = await counts();
+    const cities = await locations();
+    const missing = await request('/api/contratos', {
+      ...input, maquinaria_ids: [1, 999], fecha_inicio: '2029-02-01', fecha_fin: '2029-02-01',
+    });
+    assert.equal(missing.response.status, 404);
+    await database.query('UPDATE maquinaria SET disponible = FALSE WHERE id = 2');
+    try {
+      const inactive = await request('/api/contratos', {
+        ...input, fecha_inicio: '2029-02-01', fecha_fin: '2029-02-01',
+      });
+      assert.equal(inactive.response.status, 409);
+      assert.equal(inactive.body.error.code, 'MACHINERY_UNAVAILABLE');
+    } finally {
+      await database.query('UPDATE maquinaria SET disponible = TRUE WHERE id = 2');
+    }
+    assert.deepEqual(await counts(), before);
+    assert.deepEqual(await locations(), cities);
+  });
+
+  await t.test('un conflicto en la segunda máquina conserva contrato y ciudades anteriores', async () => {
+    const single = await request('/api/contratos', {
+      ...valid, maquinaria_id: 2, ciudad: 'Ciudad segunda', fecha_inicio: '2029-02-10', fecha_fin: '2029-02-10',
+    });
+    assert.equal(single.response.status, 201);
+    assert.equal(single.body.maquinarias.length, 1);
+    const before = await counts();
+    const cities = await locations();
+    const conflict = await request('/api/contratos', {
+      ...input, ciudad: 'Ciudad rechazada', fecha_inicio: '2029-02-10', fecha_fin: '2029-02-10',
+    });
+    assert.equal(conflict.response.status, 409);
+    assert.equal(conflict.body.error.code, 'DATE_CONFLICT');
+    assert.deepEqual(await counts(), before);
+    assert.deepEqual(await locations(), cities);
+  });
+
+  await t.test('fallar en el detalle de la segunda máquina revierte el contrato completo', async () => {
+    const before = await counts();
+    const cities = await locations();
+    await database.query('UPDATE maquinaria SET nombre = $1 WHERE id = 2', ['Detalle rechazado']);
+    await database.exec(`ALTER TABLE contrato_maquinaria ADD CONSTRAINT test_detail_rollback
+      CHECK (maquinaria_nombre <> 'Detalle rechazado')`);
+    try {
+      const failed = await request('/api/contratos', {
+        ...input, ciudad: 'Ciudad rechazada', fecha_inicio: '2029-03-01', fecha_fin: '2029-03-01',
+      });
+      assert.equal(failed.response.status, 500);
+      assert.deepEqual(await counts(), before);
+      assert.deepEqual(await locations(), cities);
+    } finally {
+      await database.exec('ALTER TABLE contrato_maquinaria DROP CONSTRAINT test_detail_rollback');
+      await database.query('UPDATE maquinaria SET nombre = $1 WHERE id = 2', ['JCB 3CX']);
+    }
+  });
+
+  await t.test('fallar en la ciudad de una máquina revierte encabezado y todos los detalles', async () => {
+    const before = await counts();
+    const cities = await locations();
+    await database.exec(`ALTER TABLE maquinaria ADD CONSTRAINT test_multiple_city_rollback
+      CHECK (id <> 2 OR ubicacion IS NULL OR ubicacion <> 'Ciudad rechazada')`);
+    try {
+      const failed = await request('/api/contratos', {
+        ...input, ciudad: 'Ciudad rechazada', fecha_inicio: '2029-03-02', fecha_fin: '2029-03-02',
+      });
+      assert.equal(failed.response.status, 500);
+      assert.deepEqual(await counts(), before);
+      assert.deepEqual(await locations(), cities);
+    } finally {
+      await database.exec('ALTER TABLE maquinaria DROP CONSTRAINT test_multiple_city_rollback');
+    }
+  });
+
+  await t.test('solicitudes concurrentes individuales y múltiples reservan la máquina compartida una sola vez', async () => {
+    const before = await counts();
+    const multiple = { ...input, fecha_inicio: '2029-04-01', fecha_fin: '2029-04-02' };
+    const single = { ...valid, maquinaria_id: 2, fecha_inicio: multiple.fecha_inicio, fecha_fin: multiple.fecha_fin };
+    const results = await Promise.all([request('/api/contratos', multiple), request('/api/contratos', single)]);
+    assert.deepEqual(results.map((result) => result.response.status).sort(), [201, 409]);
+    const winner = results.find((result) => result.response.status === 201).body;
+    assert.ok(winner.maquinarias.some((machine) => machine.maquinaria_id === 2));
+    const after = await counts();
+    assert.equal(after.contratos, before.contratos + 1);
+    assert.equal(after.detalles, before.detalles + winner.maquinarias.length);
+    const firstOrder = { ...input, maquinaria_ids: [1, 2], fecha_inicio: '2029-04-05', fecha_fin: '2029-04-05' };
+    const reverseOrder = { ...firstOrder, maquinaria_ids: [2, 1] };
+    const reversed = await Promise.all([request('/api/contratos', firstOrder), request('/api/contratos', reverseOrder)]);
+    assert.deepEqual(reversed.map((result) => result.response.status).sort(), [201, 409]);
+    assert.deepEqual(reversed.find((result) => result.response.status === 201).body.maquinarias.map((machine) => machine.maquinaria_id), [1, 2]);
+  });
+
+  await t.test('sumas decimales y detalles históricos conservan los precios aunque cambie el catálogo', async () => {
+    await database.query('UPDATE maquinaria SET tarifa_diaria = $1 WHERE id = 1', ['0.10']);
+    await database.query('UPDATE maquinaria SET tarifa_diaria = $1 WHERE id = 2', ['0.20']);
+    const result = await request('/api/contratos', {
+      ...input, fecha_inicio: '2029-05-01', fecha_fin: '2029-05-03',
+    });
+    assert.equal(result.response.status, 201);
+    assert.equal(result.body.tarifa_diaria, 0.3);
+    assert.equal(result.body.total, 0.9);
+    assert.deepEqual(result.body.maquinarias.map((machine) => [machine.tarifa_diaria, machine.total]), [[0.1, 0.3], [0.2, 0.6]]);
+    await database.query('UPDATE maquinaria SET tarifa_diaria = $1 WHERE id = 1', ['950']);
+    await database.query('UPDATE maquinaria SET nombre = $1 WHERE id = 2', ['Equipo actualizado']);
+    const before = await counts();
+    await initializeDatabase(database);
+    await initializeDatabase(database);
+    assert.deepEqual(await counts(), before);
+    const retrieved = await request(`/api/contratos/${result.body.id}`);
+    assert.deepEqual(retrieved.body, result.body);
+    const original = await request(`/api/contratos/${created.id}`);
+    assert.deepEqual(original.body, created);
+  });
 });
 
 test('health y errores internos nunca exponen credenciales', async (t) => {

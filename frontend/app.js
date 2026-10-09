@@ -4,9 +4,18 @@ const ui = {
   grid: document.getElementById('equipment-grid'),
   status: document.getElementById('catalogue-status'),
   count: document.getElementById('catalogue-count'),
+  filters: document.getElementById('catalogue-filters'),
+  tipo: document.getElementById('filter-tipo'),
+  ubicacion: document.getElementById('filter-ubicacion'),
+  filterInicio: document.getElementById('filter-fecha_inicio'),
+  filterFin: document.getElementById('filter-fecha_fin'),
+  search: document.getElementById('search-equipment'),
+  clearFilters: document.getElementById('clear-filters'),
+  appliedFilters: document.getElementById('applied-filters'),
   form: document.getElementById('booking-form'),
   fields: document.getElementById('booking-fields'),
   cliente: document.getElementById('cliente'),
+  ciudad: document.getElementById('ciudad'),
   inicio: document.getElementById('fecha_inicio'),
   fin: document.getElementById('fecha_fin'),
   selection: document.getElementById('selected-equipment'),
@@ -22,7 +31,8 @@ const ui = {
   contractId: document.getElementById('contract-id'),
   newContract: document.getElementById('new-contract'),
 };
-const state = { equipment: [], selected: null, loading: false, submitting: false };
+const emptyFilters = () => ({ tipo: '', ubicacion: '', fecha_inicio: '', fecha_fin: '' });
+const state = { equipment: [], selected: null, loading: false, submitting: false, filters: emptyFilters(), types: new Set(), typesInitialized: false, catalogueRequest: 0, catalogueController: null };
 const money = new Intl.NumberFormat('es-SV', { style: 'currency', currency: 'USD' });
 const dateDisplay = new Intl.DateTimeFormat('es-SV', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const DAY_MS = 86400000;
@@ -42,7 +52,7 @@ function todayInElSalvador() {
 }
 
 function dateValue(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000-')) return null;
   const timestamp = Date.parse(`${value}T00:00:00Z`);
   if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== value) return null;
   return timestamp;
@@ -66,7 +76,7 @@ function resetDates() {
 function clearErrors() {
   ui.error.hidden = true;
   ui.error.textContent = '';
-  for (const field of [ui.cliente, ui.inicio, ui.fin]) {
+  for (const field of [ui.cliente, ui.ciudad, ui.inicio, ui.fin]) {
     field.removeAttribute('aria-invalid');
     const message = document.getElementById(`${field.name}-error`);
     message.textContent = '';
@@ -94,12 +104,21 @@ function updateEstimate() {
   ui.days.textContent = days ? `${days} ${days === 1 ? 'día' : 'días'}` : '—';
   ui.total.textContent = state.selected && days ? money.format(state.selected.tarifa_diaria * days) : '—';
   ui.submit.disabled = !state.selected || state.loading || state.submitting;
-  ui.note.textContent = state.selected ? 'El total final se confirma al generar el contrato.' : 'Primero elige una máquina disponible.';
+  ui.newContract.disabled = state.submitting;
+  for (const control of ui.filters.querySelectorAll('input, select, button')) control.disabled = state.submitting;
+  if (!state.selected) ui.note.textContent = 'Primero elige una máquina disponible.';
+  else if (state.filters.fecha_inicio) ui.note.textContent = `La disponibilidad consultada corresponde del ${state.filters.fecha_inicio} al ${state.filters.fecha_fin}. Si cambias las fechas del contrato, se comprobarán al guardarlo.`;
+  else ui.note.textContent = 'Consulta un periodo para comprobar su disponibilidad. Las fechas del contrato se verificarán al guardarlo.';
 }
 
 function selectEquipment(item) {
-  if (!item.disponible || state.submitting) return;
+  if (!item.disponible || state.loading || state.submitting) return;
   state.selected = item;
+  if (state.filters.fecha_inicio && state.filters.fecha_fin) {
+    ui.inicio.value = state.filters.fecha_inicio;
+    ui.fin.value = state.filters.fecha_fin;
+    ui.fin.min = state.filters.fecha_inicio;
+  }
   clearErrors();
   if (!ui.confirmation.hidden) {
     ui.confirmation.hidden = true;
@@ -120,13 +139,14 @@ function renderEquipment() {
     icon.innerHTML = equipmentIcon;
     top.append(icon, element('span', 'availability', item.disponible ? 'Disponible' : 'No disponible'));
     card.append(top, element('p', 'equipment-type', item.tipo), element('h3', '', item.nombre), element('p', 'equipment-description', item.descripcion));
+    card.append(element('p', 'equipment-location', item.ubicacion ? `Última ciudad: ${item.ubicacion}` : 'Ciudad por definir'));
     const bottom = element('div', 'equipment-bottom');
     const price = element('div', 'equipment-price');
     price.append(element('strong', '', money.format(item.tarifa_diaria)), element('span', '', '/ día'));
     const button = element('button', 'select-button', item.disponible ? selected ? 'Seleccionado ✓' : 'Seleccionar' : 'No disponible');
     button.type = 'button';
     button.id = `select-equipment-${item.id}`;
-    button.disabled = !item.disponible || state.submitting;
+    button.disabled = !item.disponible || state.loading || state.submitting;
     button.setAttribute('aria-pressed', String(selected));
     button.setAttribute('aria-label', `${selected ? 'Equipo seleccionado:' : 'Seleccionar'} ${item.nombre}`);
     button.addEventListener('click', () => selectEquipment(item));
@@ -137,7 +157,7 @@ function renderEquipment() {
 }
 
 function validEquipment(item) {
-  return item && Number.isInteger(item.id) && typeof item.nombre === 'string' && typeof item.tipo === 'string' && typeof item.descripcion === 'string' && Number.isFinite(item.tarifa_diaria) && item.tarifa_diaria >= 0 && typeof item.disponible === 'boolean';
+  return item && Number.isInteger(item.id) && typeof item.nombre === 'string' && typeof item.tipo === 'string' && typeof item.descripcion === 'string' && Number.isFinite(item.tarifa_diaria) && item.tarifa_diaria >= 0 && typeof item.disponible === 'boolean' && (item.ubicacion === null || typeof item.ubicacion === 'string');
 }
 
 async function readResponse(response) {
@@ -148,48 +168,85 @@ async function readResponse(response) {
   if (!response.ok) {
     const failure = new Error(body?.error?.message || 'No se pudo completar la solicitud. Inténtalo de nuevo.');
     failure.code = body?.error?.code;
+    failure.status = response.status;
     failure.fields = body?.error?.fields;
     throw failure;
   }
   return body;
 }
 
-async function loadEquipment() {
-  if (state.loading) return;
+function updateTypeOptions(equipment) {
+  const selectedType = ui.tipo.value;
+  for (const item of equipment) state.types.add(item.tipo);
+  const options = [new Option('Todos los tipos', '')];
+  for (const type of [...state.types].sort((a, b) => a.localeCompare(b, 'es'))) options.push(new Option(type, type));
+  ui.tipo.replaceChildren(...options);
+  ui.tipo.value = selectedType;
+}
+
+function filtersSummary(filters) {
+  const descriptions = [];
+  if (filters.tipo) descriptions.push(filters.tipo);
+  if (filters.ubicacion) descriptions.push(`Ciudad: ${filters.ubicacion} (incluye ciudad por definir)`);
+  if (filters.fecha_inicio) descriptions.push(`Del ${filters.fecha_inicio} al ${filters.fecha_fin}`);
+  else descriptions.push('Equipos habilitados. Ingresa ambas fechas para comprobar disponibilidad en un periodo.');
+  return descriptions.join(' · ');
+}
+
+async function loadEquipment(filters = state.filters) {
+  const applied = { ...filters };
+  const requestId = ++state.catalogueRequest;
+  state.catalogueController?.abort();
+  state.catalogueController = new AbortController();
+  const controller = state.catalogueController;
+  const unfiltered = !Object.values(applied).some(Boolean);
+  // La consulta inicial sigue cargando los tipos aunque una búsqueda posterior la sustituya.
+  const preserveTypeCatalogue = unfiltered && !state.typesInitialized;
   state.loading = true;
-  state.selected = null;
-  state.equipment = [];
   ui.grid.replaceChildren();
   ui.grid.setAttribute('aria-busy', 'true');
+  ui.filters.setAttribute('aria-busy', 'true');
   ui.count.hidden = true;
   ui.status.hidden = false;
+  ui.appliedFilters.textContent = filtersSummary(applied);
   const spinner = element('span', 'spinner');
   spinner.setAttribute('aria-hidden', 'true');
   ui.status.replaceChildren(spinner, element('p', '', 'Cargando maquinaria…'));
   updateEstimate();
   try {
-    const response = await fetch('/api/maquinaria', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    const params = new URLSearchParams({ disponible: 'true' });
+    for (const [key, value] of Object.entries(applied)) if (value) params.set(key, value);
+    const response = await fetch(`/api/maquinaria?${params}`, { headers: { Accept: 'application/json' }, cache: 'no-store', signal: preserveTypeCatalogue ? undefined : controller.signal });
     const equipment = await readResponse(response);
     if (!Array.isArray(equipment) || !equipment.every(validEquipment)) throw new Error('El catálogo recibido no tiene el formato esperado. Inténtalo de nuevo.');
+    if (unfiltered) { updateTypeOptions(equipment); state.typesInitialized = true; }
+    if (requestId !== state.catalogueRequest) return;
+    state.filters = applied;
     state.equipment = equipment;
-    const available = equipment.filter(item => item.disponible).length;
-    ui.count.textContent = `${available} ${available === 1 ? 'disponible' : 'disponibles'}`;
+    if (state.selected) state.selected = equipment.find(item => item.id === state.selected.id && item.disponible) || null;
+    ui.count.textContent = `${equipment.length} ${equipment.length === 1 ? 'resultado' : 'resultados'}`;
     ui.count.hidden = false;
     if (equipment.length === 0) {
-      ui.status.replaceChildren(element('strong', '', 'El catálogo está vacío'), element('p', '', 'Todavía no hay maquinaria registrada. Vuelve a consultar más tarde.'));
+      ui.status.replaceChildren(element('strong', '', 'No hay resultados'), element('p', '', 'No encontramos maquinaria disponible con estos filtros. Prueba otras fechas o limpia la búsqueda.'));
     } else {
       ui.status.hidden = true;
       renderEquipment();
     }
   } catch (error) {
+    if (requestId !== state.catalogueRequest || error.name === 'AbortError') return;
+    state.equipment = [];
+    state.selected = null;
     const retry = element('button', 'retry-button', 'Volver a cargar');
     retry.type = 'button';
-    retry.addEventListener('click', loadEquipment);
+    retry.addEventListener('click', () => loadEquipment(applied));
     const message = error instanceof TypeError ? 'No pudimos conectar con el catálogo. Comprueba tu conexión y vuelve a intentarlo.' : error.message;
     ui.status.replaceChildren(element('strong', '', 'El catálogo no está disponible'), element('p', '', message), retry);
   } finally {
+    if (requestId !== state.catalogueRequest) return;
     state.loading = false;
     ui.grid.setAttribute('aria-busy', 'false');
+    ui.filters.setAttribute('aria-busy', 'false');
+    renderEquipment();
     updateEstimate();
   }
 }
@@ -205,6 +262,9 @@ function validateForm() {
   const client = ui.cliente.value.trim();
   if (client.length < 2) fail(ui.cliente, 'Escribe un nombre de al menos 2 caracteres.');
   if (client.length > 160) fail(ui.cliente, 'Usa un máximo de 160 caracteres.');
+  const city = ui.ciudad.value.trim();
+  if (city.length < 2) fail(ui.ciudad, 'Escribe una ciudad de al menos 2 caracteres.');
+  if (city.length > 100) fail(ui.ciudad, 'Usa un máximo de 100 caracteres.');
   const start = dateValue(ui.inicio.value);
   const end = dateValue(ui.fin.value);
   if (start === null) fail(ui.inicio, 'Selecciona una fecha de inicio válida.');
@@ -227,6 +287,7 @@ function showConfirmation(contract) {
   ui.details.replaceChildren(
     confirmationRow('Equipo', contract.maquinaria_nombre),
     confirmationRow('Cliente', contract.cliente),
+    confirmationRow('Ciudad de la obra', contract.ciudad || 'Ciudad por definir'),
     confirmationRow('Inicio', dateDisplay.format(new Date(start))),
     confirmationRow('Fin', dateDisplay.format(new Date(end))),
     confirmationRow('Duración', `${contract.dias} ${contract.dias === 1 ? 'día' : 'días'}`),
@@ -242,7 +303,7 @@ function showConfirmation(contract) {
 
 function applyServerErrors(error) {
   if (!error.fields || typeof error.fields !== 'object') return;
-  const fieldMap = { cliente: ui.cliente, fecha_inicio: ui.inicio, fecha_fin: ui.fin };
+  const fieldMap = { cliente: ui.cliente, ciudad: ui.ciudad, fecha_inicio: ui.inicio, fecha_fin: ui.fin };
   let firstInvalid = null;
   for (const [name, value] of Object.entries(error.fields)) {
     const field = fieldMap[name];
@@ -254,8 +315,8 @@ function applyServerErrors(error) {
 
 ui.form.addEventListener('submit', async event => {
   event.preventDefault();
-  if (state.submitting || !validateForm()) return;
-  const payload = { maquinaria_id: state.selected.id, cliente: ui.cliente.value.trim(), fecha_inicio: ui.inicio.value, fecha_fin: ui.fin.value };
+  if (state.submitting || state.loading || !validateForm()) return;
+  const payload = { maquinaria_id: state.selected.id, cliente: ui.cliente.value.trim(), ciudad: ui.ciudad.value.trim(), fecha_inicio: ui.inicio.value, fecha_fin: ui.fin.value };
   state.submitting = true;
   ui.fields.disabled = true;
   ui.submit.textContent = 'Generando contrato…';
@@ -265,15 +326,18 @@ ui.form.addEventListener('submit', async event => {
   try {
     const response = await fetch('/api/contratos', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload) });
     const contract = await readResponse(response);
-    if (response.status !== 201 || !contract || typeof contract.id !== 'string' || !contract.id || contract.estado !== 'CONFIRMADO' || dateValue(contract.fecha_inicio) === null || dateValue(contract.fecha_fin) === null || typeof contract.cliente !== 'string' || typeof contract.maquinaria_nombre !== 'string' || !Number.isInteger(contract.dias) || contract.dias < 1 || !Number.isFinite(contract.tarifa_diaria) || contract.tarifa_diaria < 0 || !Number.isFinite(contract.total) || contract.total < 0) {
+    if (response.status !== 201 || !contract || typeof contract.id !== 'string' || !contract.id || contract.estado !== 'CONFIRMADO' || dateValue(contract.fecha_inicio) === null || dateValue(contract.fecha_fin) === null || typeof contract.cliente !== 'string' || (contract.ciudad !== null && typeof contract.ciudad !== 'string') || typeof contract.maquinaria_nombre !== 'string' || !Number.isInteger(contract.dias) || contract.dias < 1 || !Number.isFinite(contract.tarifa_diaria) || contract.tarifa_diaria < 0 || !Number.isFinite(contract.total) || contract.total < 0) {
       throw new Error('La respuesta del contrato no pudo verificarse. Revisa el servidor antes de volver a enviarlo.');
     }
     showConfirmation(contract);
+    state.selected = null;
+    await loadEquipment();
   } catch (error) {
     const message = error instanceof TypeError ? 'No se recibió la confirmación del servidor. Comprueba tu conexión antes de volver a enviar la solicitud.' : error.message;
     formError(message);
     ui.fields.disabled = false;
     applyServerErrors(error);
+    if (error.status === 409) await loadEquipment();
   } finally {
     state.submitting = false;
     ui.fields.disabled = false;
@@ -292,20 +356,65 @@ ui.inicio.addEventListener('input', () => {
   updateEstimate();
 });
 ui.fin.addEventListener('input', () => { clearErrors(); updateEstimate(); });
-ui.cliente.addEventListener('input', () => {
-  ui.cliente.removeAttribute('aria-invalid');
-  document.getElementById('cliente-error').hidden = true;
+for (const field of [ui.cliente, ui.ciudad]) field.addEventListener('input', () => {
+  field.removeAttribute('aria-invalid');
+  document.getElementById(`${field.name}-error`).hidden = true;
   ui.error.hidden = true;
 });
 ui.newContract.addEventListener('click', () => {
+  if (state.submitting) return;
+  state.selected = null;
   ui.form.reset();
   resetDates();
   clearErrors();
   ui.confirmation.hidden = true;
   ui.form.hidden = false;
+  renderEquipment();
   updateEstimate();
   ui.cliente.focus();
 });
+
+function clearFilterErrors() {
+  for (const field of [ui.ubicacion, ui.filterInicio, ui.filterFin]) {
+    field.removeAttribute('aria-invalid');
+    const message = document.getElementById(`${field.name}-error`);
+    message.textContent = '';
+    message.hidden = true;
+  }
+}
+
+function validateFilters() {
+  clearFilterErrors();
+  let firstInvalid = null;
+  const fail = (field, message) => { fieldError(field, message); firstInvalid ||= field; };
+  const startValue = ui.filterInicio.value;
+  const endValue = ui.filterFin.value;
+  const start = dateValue(startValue);
+  const end = dateValue(endValue);
+  const hasDates = startValue || endValue || ui.filterInicio.validity.badInput || ui.filterFin.validity.badInput;
+  if (hasDates) {
+    if (start === null) fail(ui.filterInicio, 'Completa una fecha de inicio válida para consultar el periodo.');
+    if (end === null) fail(ui.filterFin, 'Completa una fecha de fin válida para consultar el periodo.');
+    else if (start !== null && end < start) fail(ui.filterFin, 'La fecha de fin debe ser igual o posterior al inicio.');
+  }
+  if (ui.ubicacion.value.trim().length > 100) fail(ui.ubicacion, 'Usa un máximo de 100 caracteres.');
+  if (firstInvalid) { firstInvalid.focus(); return null; }
+  return { tipo: ui.tipo.value, ubicacion: ui.ubicacion.value.trim(), fecha_inicio: startValue, fecha_fin: endValue };
+}
+
+ui.filters.addEventListener('submit', event => {
+  event.preventDefault();
+  if (state.submitting) return;
+  const filters = validateFilters();
+  if (filters) loadEquipment(filters);
+});
+ui.clearFilters.addEventListener('click', () => {
+  if (state.submitting) return;
+  ui.filters.reset();
+  clearFilterErrors();
+  loadEquipment(emptyFilters());
+});
+for (const field of [ui.ubicacion, ui.filterInicio, ui.filterFin]) field.addEventListener('input', clearFilterErrors);
 
 resetDates();
 updateEstimate();

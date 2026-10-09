@@ -12,6 +12,10 @@ npm ci
 npm test
 npm start
 ```
+si lo tienes instalado
+```sh
+npm.cmd start
+```
 
 Abrir `http://localhost:3000`. En desarrollo, sin `DATABASE_URL`, se usa PostgreSQL embebido (PGlite) y los datos se conservan en `data/`. En producción se requiere `DATABASE_URL` de PostgreSQL. El inicio aplica el esquema y sus cambios de forma idempotente; conserva los equipos y contratos existentes.
 

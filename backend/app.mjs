@@ -290,6 +290,22 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         const filters = validateMachineryFilters(url.searchParams);
         return json(response, 200, await findMachinery(database, filters));
       }
+      if (path === '/api/reservas/ocupadas' && request.method === 'GET') {
+        const id = Number(url.searchParams.get('maquinaria_id'));
+        if (!Number.isInteger(id) || id < 1 || id > 2147483647) {
+          throw new ApiError(400, 'VALIDATION_ERROR', 'Selecciona una maquinaria válida.');
+        }
+        const { rows } = await database.query(
+          `SELECT c.fecha_inicio::text, c.fecha_fin::text
+           FROM contrato c
+           JOIN contrato_maquinaria cm ON cm.contrato_id = c.id
+           WHERE cm.maquinaria_id = $1 AND c.estado = 'CONFIRMADO'
+           ORDER BY c.fecha_inicio`,
+          [id],
+        );
+        return json(response, 200, rows);
+      }
+
       if (path === '/api/contratos' && request.method === 'POST') {
         const input = validateContract(await readJson(request));
         const contract = await saveContract(database, input);

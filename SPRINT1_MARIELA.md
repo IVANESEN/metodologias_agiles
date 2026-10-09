@@ -50,3 +50,30 @@ Resultados:
 ## Conclusión
 Los criterios de aceptación de HU8 se verificaron
 correctamente mediante pruebas manuales y automatizadas.
+
+## Implementación adicional de Sprint 1
+
+Se implementó una interfaz web para reservar maquinaria.
+
+Funcionalidades:
+- Seleccionar maquinaria disponible.
+- Ingresar nombre del cliente y fechas de alquiler.
+- Consultar los períodos ocupados de cada maquinaria.
+- Mostrar mensajes de confirmación y conflictos.
+- Actualizar las fechas ocupadas después de confirmar una reserva.
+
+Archivos implementados:
+- frontend/index.html
+- backend/app.mjs
+- backend/reservas.test.mjs
+
+Nueva ruta:
+GET /api/reservas/ocupadas?maquinaria_id=1
+
+## Resultados finales de las pruebas
+
+- 14 pruebas automatizadas aprobadas.
+- 0 pruebas fallidas.
+- Reserva confirmada desde la interfaz web.
+- Bloqueo de fechas superpuestas comprobado.
+- Concurrencia comprobada mediante pruebas automatizadas.

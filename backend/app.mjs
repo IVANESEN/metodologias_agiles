@@ -189,6 +189,21 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         );
         return json(response, 200, rows.map((row) => ({ ...row, tarifa_diaria: Number(row.tarifa_diaria) })));
       }
+      if (path === '/api/reservas/ocupadas' && request.method === 'GET') {
+        const id = Number(url.searchParams.get('maquinaria_id'));
+        if (!Number.isInteger(id) || id < 1 || id > 2147483647) {
+          throw new ApiError(400, 'VALIDATION_ERROR', 'Selecciona una maquinaria válida.');
+        }
+        const { rows } = await database.query(
+          `SELECT fecha_inicio::text, fecha_fin::text
+           FROM contrato
+           WHERE maquinaria_id = $1 AND estado = 'CONFIRMADO'
+           ORDER BY fecha_inicio`,
+          [id],
+        );
+        return json(response, 200, rows);
+      }
+
       if (path === '/api/contratos' && request.method === 'POST') {
         const input = validateContract(await readJson(request));
         const contract = await saveContract(database, input);

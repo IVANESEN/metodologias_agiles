@@ -116,7 +116,22 @@ body:has(#contrato:target) .nav-tab[href="#contrato"], body:has(#catalogo:target
 .panel-heading h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
 .panel-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 #booking-form { padding: 20px; }
-.selected-equipment { display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); }
+.selected-equipment { padding: 12px; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); }
+.selection-heading { display: flex; align-items: center; gap: 12px; }
+.selection-heading > div { min-width: 0; }
+.selected-list, .confirmed-equipment { margin: 16px 0 0; padding: 0; list-style: none; }
+.selected-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); }
+.selected-list li > div { min-width: 0; }
+.selected-list strong { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.selected-list span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.selected-list .selection-unavailable { color: var(--error); }
+.remove-equipment, .remove-all-button { min-height: 32px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--link); font-size: 12px; }
+.remove-equipment { flex-shrink: 0; }
+.remove-equipment:hover, .remove-all-button:hover { border-color: var(--border-hover); background: var(--layer); }
+.remove-equipment:disabled, .remove-all-button:disabled { color: var(--muted); }
+.remove-all-button { width: 100%; margin-top: 4px; }
+.selected-equipment[aria-invalid="true"] { border-color: var(--error); }
+.selected-equipment .selection-error { margin-top: 12px; }
 .selected-icon { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; color: var(--muted); background: var(--surface); border-radius: 6px; }
 .selected-icon svg { width: 22px; height: 22px; }
 .selection-label { color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .03em; }
@@ -151,6 +166,12 @@ fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
 .confirmation .eyebrow { color: var(--success); font-size: 12px; letter-spacing: .06em; }
 .confirmation h3 { margin: 0 0 8px; font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
 .confirmation-copy { margin: 0 0 20px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.confirmation-equipment-title { margin: 0; font-size: 12px; font-weight: 500; color: var(--muted); }
+.confirmed-equipment { margin-bottom: 12px; }
+.confirmed-equipment li { padding: 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); }
+.confirmed-equipment strong { display: block; font-size: 14px; overflow-wrap: anywhere; }
+.confirmed-equipment p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.confirmed-equipment .confirmed-item-total { color: var(--text); }
 .confirmation-details { margin: 0; }
 .confirmation-details > div { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 14px; line-height: 1.5; }
 .confirmation-details dt { color: var(--muted); }
@@ -182,7 +203,7 @@ fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
   .equipment-bottom { align-items: center; flex-direction: row; }
   .select-button { width: auto; }
   .equipment-description { min-height: 0; }
-  .field input, .field select, .primary-button, .search-button, .filter-actions .retry-button { min-height: 44px; }
+  .field input, .field select, .primary-button, .search-button, .filter-actions .retry-button, .remove-equipment, .remove-all-button { min-height: 44px; }
 }
 
 @media (max-width: 480px) {

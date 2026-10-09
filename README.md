@@ -1,7 +1,7 @@
 
 # Constructora El Salvador
 
-Sistema de alquiler de maquinaria. Esta entrega implementa HU3: consulta de maquinaria disponible por tipo, fechas y ciudad.
+Sistema de alquiler de maquinaria. Incluye HU3 (consulta por tipo, fechas y ciudad) y contratos con una o varias máquinas.
 
 ## Ejecutar y probar
 
@@ -14,6 +14,29 @@ npm start
 ```
 
 Abrir `http://localhost:3000`. En desarrollo, sin `DATABASE_URL`, se usa PostgreSQL embebido (PGlite) y los datos se conservan en `data/`. En producción se requiere `DATABASE_URL` de PostgreSQL. El inicio aplica el esquema y sus cambios de forma idempotente; conserva los equipos y contratos existentes.
+
+## Selección y contratos
+
+- **Seleccionar** agrega una máquina al contrato. El mismo botón cambia a **Deseleccionar** para retirarla.
+- El resumen permite quitar cada máquina o deseleccionar todas. Se puede seguir buscando por otros tipos o ciudades sin perder los equipos elegidos.
+- Todas las máquinas de un contrato comparten cliente, ciudad y fechas. Las fechas de la búsqueda se copian al contrato al elegir el primer equipo; agregar otro no cambia ese período.
+- La tarifa diaria del contrato suma las tarifas de las máquinas. El total multiplica esa suma por los días de alquiler, incluyendo inicio y fin.
+- Se genera un solo número de contrato. Antes de guardar se comprueba cada equipo; si alguno no existe, está inhabilitado o ya está ocupado, se rechaza toda la operación y no se crean reservas parciales.
+- Los contratos históricos de una máquina se conservan. Al iniciar se prepara de forma idempotente su detalle en `contrato_maquinaria`, manteniendo los nombres y tarifas pactados.
+
+La interfaz envía una lista de identificadores únicos, sin tarifas proporcionadas por el cliente:
+
+```json
+{
+  "maquinaria_ids": [1, 2],
+  "cliente": "Cliente de ejemplo",
+  "ciudad": "Santa Ana",
+  "fecha_inicio": "2027-02-10",
+  "fecha_fin": "2027-02-12"
+}
+```
+
+`POST /api/contratos` sigue aceptando `maquinaria_id` para los clientes anteriores que alquilan una sola máquina. No se envían ambos formatos juntos. `POST` y `GET /api/contratos/:id` devuelven `maquinarias`, con `maquinaria_id`, `maquinaria_nombre`, `tarifa_diaria` y `total` para cada línea. Este detalle es la fuente para mostrar todos los equipos o generar documentos. Los campos históricos `maquinaria_id` y `maquinaria_nombre` del encabezado identifican el primer equipo, ordenado por ID; `tarifa_diaria` y `total` del encabezado representan el contrato completo.
 
 ## Consulta de maquinaria (HU3)
 
@@ -54,8 +77,26 @@ Usar datos de prueba en una base local o de pruebas; las reservas de prueba no d
 | Consultar otra ciudad | CAT 336 no coincide; se siguen incluyendo equipos sin ciudad. |
 | Combinar tipo, ciudad y fechas sin coincidencias | Mensaje de búsqueda sin resultados. |
 | Limpiar filtros | Se restaura el catálogo habilitado y los campos vacíos. |
-| Cambiar filtros con una máquina seleccionada | Se elimina la selección si deja de coincidir. |
+| Seleccionar una excavadora y buscar retroexcavadoras | La excavadora permanece en el resumen para poder añadir otra máquina. |
 | Otro cliente reserva durante la consulta | Al intentar guardar se muestra el conflicto y se actualiza el catálogo. |
 | Navegar con teclado y en celular | Controles, mensajes y tarjetas legibles y utilizables. |
+
+## Revisión de selección múltiple
+
+Usar una base de pruebas y un período libre para todos los equipos.
+
+| Caso | Resultado esperado |
+| --- | --- |
+| Seleccionar CAT 336 y volver a pulsar su botón | Se deselecciona; el resumen y total se actualizan. |
+| Elegir las dos máquinas y quitar una desde el resumen | Solo queda la otra, con su tarifa correspondiente. |
+| Pulsar Deseleccionar todas | El resumen queda vacío y Generar contrato se deshabilita. |
+| Elegir las dos máquinas del 10 al 12 de febrero de 2027 | Tarifa conjunta de $725 diarios y total de $2,175. |
+| Confirmar las dos máquinas | Un solo número de contrato, dos líneas y la misma ciudad y fechas. |
+| Consultar disponibilidad durante ese contrato | Ninguna de sus dos máquinas aparece libre. |
+| Consultar el 13 de febrero | Ambas aparecen disponibles si no existen otros contratos. |
+| Intentar un contrato conjunto con una máquina ya ocupada | Se rechaza completo; no reserva la otra ni cambia sus ciudades. |
+| Dos clientes intentan contratar grupos que comparten una máquina | Solo un contrato obtiene el equipo para el período coincidente. |
+| Consultar un contrato histórico de una sola máquina | Se recuperan sus datos y una línea de maquinaria. |
+| Cambiar ciudad, cliente o fechas y luego quitar un equipo | Se conservan los datos escritos y se recalcula el total. |
 
 La revisión debe realizarla una persona distinta del autor (la estrategia del equipo propone a Mariela). Registrar caso, resultado esperado, resultado obtenido, responsable, fecha y evidencia. Para cerrar la historia también se requiere aceptación del Product Owner y verificación en el ambiente compartido.

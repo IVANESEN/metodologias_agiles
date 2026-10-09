@@ -15,7 +15,7 @@ const MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
 };
-const CONTRACT_COLUMNS = `id, maquinaria_id, maquinaria_nombre, cliente,
+const CONTRACT_COLUMNS = `id, maquinaria_id, maquinaria_nombre, cliente, ciudad,
   fecha_inicio::text, fecha_fin::text, dias, tarifa_diaria, total, estado`;
 
 export class ApiError extends Error {
@@ -74,6 +74,67 @@ function parseDate(value) {
   return timestamp;
 }
 
+export function validateMachineryFilters(searchParams) {
+  const fields = {};
+  const tipo = (searchParams.get('tipo') || '').trim();
+  const ubicacion = (searchParams.get('ubicacion') || '').trim();
+  if (tipo.length > 80 || /[\u0000-\u001f\u007f]/.test(tipo)) {
+    fields.tipo = 'Escribe un tipo válido de hasta 80 caracteres.';
+  }
+  if (ubicacion.length > 100 || /[\u0000-\u001f\u007f]/.test(ubicacion)) {
+    fields.ubicacion = 'Escribe una ciudad válida de hasta 100 caracteres.';
+  }
+  const fecha_inicio = searchParams.get('fecha_inicio') || '';
+  const fecha_fin = searchParams.get('fecha_fin') || '';
+  if (fecha_inicio || fecha_fin) {
+    const start = parseDate(fecha_inicio);
+    const end = parseDate(fecha_fin);
+    if (start === null) fields.fecha_inicio = 'Selecciona ambas fechas válidas con formato AAAA-MM-DD.';
+    if (end === null) fields.fecha_fin = 'Selecciona ambas fechas válidas con formato AAAA-MM-DD.';
+    if (start !== null && end !== null && end < start) {
+      fields.fecha_fin = 'La fecha de fin debe ser igual o posterior a la fecha de inicio.';
+    }
+  }
+  const available = searchParams.get('disponible');
+  if (available !== null && !['true', 'false'].includes(available)) {
+    fields.disponible = 'Usa true o false para indicar disponibilidad.';
+  }
+  if (Object.keys(fields).length) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los filtros de maquinaria.', fields);
+  }
+  return {
+    tipo, ubicacion, fecha_inicio, fecha_fin,
+    disponible: available === null ? (fecha_inicio ? true : undefined) : available === 'true',
+  };
+}
+
+export async function findMachinery(database, filters) {
+  const conditions = [];
+  const values = [];
+  const parameter = (value) => { values.push(value); return `$${values.length}`; };
+  if (filters.disponible !== undefined) {
+    conditions.push(`m.disponible = ${parameter(filters.disponible)}::boolean`);
+  }
+  if (filters.tipo) conditions.push(`lower(m.tipo) = lower(${parameter(filters.tipo)})`);
+  if (filters.ubicacion) {
+    conditions.push(`(m.ubicacion IS NULL OR lower(m.ubicacion) = lower(${parameter(filters.ubicacion)}))`);
+  }
+  if (filters.fecha_inicio) {
+    const start = parameter(filters.fecha_inicio);
+    const end = parameter(filters.fecha_fin);
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM contrato c WHERE c.maquinaria_id = m.id AND c.estado = 'CONFIRMADO'
+      AND c.fecha_inicio <= ${end}::date AND c.fecha_fin >= ${start}::date
+    )`);
+  }
+  const { rows } = await database.query(
+    `SELECT m.id, m.nombre, m.tipo, m.descripcion, m.tarifa_diaria, m.disponible, m.ubicacion
+     FROM maquinaria m ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY m.id`,
+    values,
+  );
+  return rows.map((row) => ({ ...row, tarifa_diaria: Number(row.tarifa_diaria) }));
+}
+
 export function validateContract(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos del contrato.');
@@ -86,6 +147,10 @@ export function validateContract(body) {
   if (cliente.length < 2 || cliente.length > 160 || /[\u0000-\u001f\u007f]/.test(cliente)) {
     fields.cliente = 'Escribe el nombre del cliente (2 a 160 caracteres).';
   }
+  const ciudad = typeof body.ciudad === 'string' ? body.ciudad.trim() : '';
+  if (ciudad.length < 2 || ciudad.length > 100 || /[\u0000-\u001f\u007f]/.test(ciudad)) {
+    fields.ciudad = 'Escribe la ciudad de la obra (2 a 100 caracteres).';
+  }
   const start = parseDate(body.fecha_inicio);
   const end = parseDate(body.fecha_fin);
   if (start === null) fields.fecha_inicio = 'Usa una fecha válida con formato AAAA-MM-DD.';
@@ -97,7 +162,7 @@ export function validateContract(body) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos del contrato.', fields);
   }
   return {
-    maquinaria_id: body.maquinaria_id, cliente,
+    maquinaria_id: body.maquinaria_id, cliente, ciudad,
     fecha_inicio: body.fecha_inicio, fecha_fin: body.fecha_fin,
     dias: Math.round((end - start) / DAY_MS) + 1,
   };
@@ -129,12 +194,14 @@ export async function saveContract(database, input) {
     const id = randomUUID();
     const result = await tx.query(
       `INSERT INTO contrato
-       (id, maquinaria_id, maquinaria_nombre, cliente, fecha_inicio, fecha_fin, dias, tarifa_diaria, total)
-       VALUES ($1, $2, $3, $4, $5::date, $6::date, $7::integer, $8::numeric, $7::integer * $8::numeric)
+       (id, maquinaria_id, maquinaria_nombre, cliente, fecha_inicio, fecha_fin, dias, tarifa_diaria, total, ciudad)
+       VALUES ($1, $2, $3, $4, $5::date, $6::date, $7::integer, $8::numeric, $7::integer * $8::numeric, $9)
        RETURNING ${CONTRACT_COLUMNS}`,
       [id, input.maquinaria_id, machine.nombre, input.cliente, input.fecha_inicio,
-        input.fecha_fin, input.dias, machine.tarifa_diaria],
+        input.fecha_fin, input.dias, machine.tarifa_diaria, input.ciudad],
     );
+    // This is the last city entered in a contract, not a live physical location.
+    await tx.query('UPDATE maquinaria SET ubicacion = $2 WHERE id = $1', [input.maquinaria_id, input.ciudad]);
     return normalizeContract(result.rows[0]);
   });
 }
@@ -184,10 +251,8 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         return json(response, 200, { status: 'ok', database: database.provider || 'postgresql' });
       }
       if (path === '/api/maquinaria' && request.method === 'GET') {
-        const { rows } = await database.query(
-          'SELECT id, nombre, tipo, descripcion, tarifa_diaria, disponible FROM maquinaria ORDER BY id',
-        );
-        return json(response, 200, rows.map((row) => ({ ...row, tarifa_diaria: Number(row.tarifa_diaria) })));
+        const filters = validateMachineryFilters(url.searchParams);
+        return json(response, 200, await findMachinery(database, filters));
       }
       if (path === '/api/contratos' && request.method === 'POST') {
         const input = validateContract(await readJson(request));

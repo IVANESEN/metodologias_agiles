@@ -47,8 +47,20 @@
         <section class="catalogue" id="catalogo" aria-labelledby="catalogue-title">
           <div class="section-heading">
             <div><p class="eyebrow">CATÁLOGO</p><h2 id="catalogue-title">Maquinaria disponible</h2></div>
-            <span class="catalogue-count" id="catalogue-count" hidden></span>
+            <span class="catalogue-count" id="catalogue-count" role="status" aria-live="polite" aria-atomic="true" hidden></span>
           </div>
+          <form class="catalogue-filters" id="catalogue-filters" novalidate aria-label="Filtrar maquinaria disponible">
+            <div class="filter-fields">
+              <div class="field"><label for="filter-tipo">Tipo de maquinaria</label><select id="filter-tipo" name="filter_tipo"><option value="">Todos los tipos</option></select></div>
+              <div class="field"><label for="filter-ubicacion">Ciudad de la obra</label><input id="filter-ubicacion" name="filter_ubicacion" type="text" maxlength="100" placeholder="Ej. San Salvador" aria-describedby="filter-location-help filter_ubicacion-error"><p class="field-error" id="filter_ubicacion-error" hidden></p></div>
+              <div class="field"><label for="filter-fecha_inicio">Inicio del alquiler</label><input id="filter-fecha_inicio" name="filter_fecha_inicio" type="date" aria-describedby="filter-date-help filter_fecha_inicio-error"><p class="field-error" id="filter_fecha_inicio-error" hidden></p></div>
+              <div class="field"><label for="filter-fecha_fin">Fin del alquiler</label><input id="filter-fecha_fin" name="filter_fecha_fin" type="date" aria-describedby="filter-date-help filter_fecha_fin-error"><p class="field-error" id="filter_fecha_fin-error" hidden></p></div>
+            </div>
+            <p class="filter-help" id="filter-date-help">Las fechas son opcionales; completa ambas para consultar un periodo. Un alquiler puede durar un solo día.</p>
+            <p class="filter-help" id="filter-location-help">La ciudad indica la última ubicación registrada. Los equipos con ciudad por definir también aparecen para cualquier ciudad.</p>
+            <div class="filter-actions"><button class="search-button" id="search-equipment" type="submit">Buscar</button><button class="retry-button" id="clear-filters" type="button">Limpiar</button></div>
+          </form>
+          <p class="applied-filters" id="applied-filters" role="status" aria-live="polite"></p>
           <div id="catalogue-status" class="catalogue-status" role="status" aria-live="polite">
             <span class="spinner" aria-hidden="true"></span><p>Cargando maquinaria…</p>
           </div>
@@ -72,6 +84,7 @@
             <fieldset id="booking-fields">
               <legend class="sr-only">Datos del contrato de alquiler</legend>
               <div class="field"><label for="cliente">Nombre del cliente <span aria-hidden="true">*</span></label><input id="cliente" name="cliente" type="text" autocomplete="name" required maxlength="160" placeholder="Nombre completo o empresa" aria-describedby="cliente-error"><p class="field-error" id="cliente-error" hidden></p></div>
+              <div class="field"><label for="ciudad">Ciudad de la obra <span aria-hidden="true">*</span></label><input id="ciudad" name="ciudad" type="text" autocomplete="address-level2" required minlength="2" maxlength="100" placeholder="Ciudad donde se utilizará el equipo" aria-describedby="ciudad-error"><p class="field-error" id="ciudad-error" hidden></p></div>
               <div class="date-fields">
                 <div class="field"><label for="fecha_inicio">Fecha de inicio <span aria-hidden="true">*</span></label><input id="fecha_inicio" name="fecha_inicio" type="date" required aria-describedby="fecha_inicio-error"><p class="field-error" id="fecha_inicio-error" hidden></p></div>
                 <div class="field"><label for="fecha_fin">Fecha de fin <span aria-hidden="true">*</span></label><input id="fecha_fin" name="fecha_fin" type="date" required aria-describedby="fecha_fin-error"><p class="field-error" id="fecha_fin-error" hidden></p></div>

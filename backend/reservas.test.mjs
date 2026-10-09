@@ -45,6 +45,7 @@ test('HU8: las reservas confirmadas bloquean fechas', async (t) => {
     body: JSON.stringify({
       maquinaria_id: 1,
       cliente: 'Cliente Sprint 1',
+      ciudad: 'San Salvador',
       fecha_inicio: '2027-02-10',
       fecha_fin: '2027-02-12'
     })
@@ -67,6 +68,7 @@ test('HU8: las reservas confirmadas bloquean fechas', async (t) => {
     body: JSON.stringify({
       maquinaria_id: 1,
       cliente: 'Segundo cliente',
+      ciudad: 'San Salvador',
       fecha_inicio: '2027-02-11',
       fecha_fin: '2027-02-13'
     })

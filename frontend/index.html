@@ -1,280 +1,115 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Reservas de maquinaria | Constructora El Salvador</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; font-family: Arial, sans-serif;
-      background: #f3f5f9; color: #1e293b;
-    }
-    header {
-      background: #172554; color: white;
-      padding: 28px 20px; text-align: center;
-    }
-    header h1 { margin: 0 0 8px; }
-    header p { margin: 0; color: #cbd5e1; }
-    main { max-width: 950px; margin: 30px auto; padding: 0 16px; }
-    .layout {
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 22px;
-    }
-    .panel {
-      background: white; padding: 24px;
-      border-radius: 14px;
-      box-shadow: 0 4px 16px #0000000d;
-    }
-    h2 { margin-top: 0; font-size: 21px; }
-    label {
-      display: block; margin: 16px 0 6px;
-      font-weight: bold; font-size: 14px;
-    }
-    input, select, button {
-      width: 100%; padding: 12px;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px; font: inherit;
-    }
-    button {
-      background: #2563eb; color: white;
-      border: none; cursor: pointer;
-      font-weight: bold; margin-top: 20px;
-    }
-    button:hover { background: #1d4ed8; }
-    button:disabled { opacity: .6; cursor: wait; }
-    .hint { font-size: 13px; color: #64748b; }
-    .periodo {
-      padding: 12px; margin: 10px 0;
-      border-left: 4px solid #dc2626;
-      background: #fef2f2; border-radius: 5px;
-    }
-    .mensaje {
-      margin-top: 16px; padding: 14px;
-      border-radius: 8px; display: none;
-      overflow-wrap: anywhere;
-    }
-    .exito { display: block; background: #dcfce7; color: #166534; }
-    .error { display: block; background: #fee2e2; color: #991b1b; }
-    .info { display: block; background: #dbeafe; color: #1e40af; }
-    @media (max-width: 700px) {
-      .layout { grid-template-columns: 1fr; }
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <h1>Constructora El Salvador</h1>
-    <p>Sistema de reservas y bloqueo de maquinaria</p>
-  </header>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0D1117">
+    <meta name="description" content="Consulta maquinaria de construcción disponible y solicita tu contrato de alquiler con Constructora El Salvador.">
+    <title>Alquiler de maquinaria · Constructora El Salvador</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#catalogo">Ir al catálogo</a>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/" aria-label="Constructora El Salvador, inicio">
+          <span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 26V13l11-7 11 7v13H5Z"/><path d="M12 26V15h8v11M3 26h26"/></svg></span>
+          <span>CONSTRUCTORA<span class="brand-subtitle">EL SALVADOR</span></span>
+        </a>
+        <span class="header-label"><span class="status-dot" aria-hidden="true"></span> Alquiler de maquinaria</span>
+      </div>
+      <nav class="site-nav" aria-label="Secciones de la página">
+        <a class="nav-tab" href="#catalogo">Catálogo</a>
+        <a class="nav-tab" href="#contrato">Contrato</a>
+      </nav>
+    </header>
 
-  <main>
-    <div class="layout">
-      <section class="panel">
-        <h2>Nueva reserva</h2>
-        <form id="formulario">
-          <label for="maquinaria">Maquinaria</label>
-          <select id="maquinaria" required>
-            <option value="">Cargando maquinaria...</option>
-          </select>
-
-          <label for="cliente">Nombre del cliente</label>
-          <input id="cliente" type="text" minlength="2"
-                 maxlength="160" required placeholder="Nombre completo">
-
-          <label for="inicio">Fecha de inicio</label>
-          <input id="inicio" type="date" required>
-
-          <label for="fin">Fecha de finalización</label>
-          <input id="fin" type="date" required>
-
-          <p class="hint">
-            Las fechas de inicio y fin están incluidas en el alquiler.
-          </p>
-
-          <button id="reservar" type="submit">Confirmar reserva</button>
-        </form>
-        <div id="mensaje" class="mensaje" role="status" aria-live="polite"></div>
-      </section>
-
-      <section class="panel">
-        <h2>Fechas ocupadas</h2>
-        <p class="hint">
-          Estos períodos ya tienen una reserva confirmada.
-          No se permite reservar fechas superpuestas.
-        </p>
-        <div id="ocupadas" aria-live="polite">
-          Selecciona una maquinaria para consultar su disponibilidad.
+    <main class="page-shell">
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">TU OBRA, EN MARCHA</p>
+        <h1 id="page-title">El equipo que tu<br>proyecto necesita.</h1>
+        <p class="intro-copy">Elige una o varias máquinas, define las fechas y genera un solo contrato de alquiler.</p>
+        <div class="process" aria-label="Pasos del alquiler">
+          <span><b>01</b> Elige el equipo</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+          <span><b>02</b> Define las fechas</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+          <span><b>03</b> Recibe tu contrato</span>
         </div>
       </section>
-    </div>
-  </main>
 
-  <script>
-    const maquinaria = document.querySelector('#maquinaria');
-    const formulario = document.querySelector('#formulario');
-    const ocupadas = document.querySelector('#ocupadas');
-    const mensaje = document.querySelector('#mensaje');
-    const boton = document.querySelector('#reservar');
-    const inicio = document.querySelector('#inicio');
-    const fin = document.querySelector('#fin');
+      <div class="workspace">
+        <section class="catalogue" id="catalogo" aria-labelledby="catalogue-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">CATÁLOGO</p><h2 id="catalogue-title">Maquinaria disponible</h2></div>
+            <span class="catalogue-count" id="catalogue-count" role="status" aria-live="polite" aria-atomic="true" hidden></span>
+          </div>
+          <form class="catalogue-filters" id="catalogue-filters" novalidate aria-label="Filtrar maquinaria disponible">
+            <div class="filter-fields">
+              <div class="field"><label for="filter-tipo">Tipo de maquinaria</label><select id="filter-tipo" name="filter_tipo"><option value="">Todos los tipos</option></select></div>
+              <div class="field"><label for="filter-ubicacion">Ciudad de la obra</label><input id="filter-ubicacion" name="filter_ubicacion" type="text" maxlength="100" placeholder="Ej. San Salvador" aria-describedby="filter-location-help filter_ubicacion-error"><p class="field-error" id="filter_ubicacion-error" hidden></p></div>
+              <div class="field"><label for="filter-fecha_inicio">Inicio del alquiler</label><input id="filter-fecha_inicio" name="filter_fecha_inicio" type="date" aria-describedby="filter-date-help filter_fecha_inicio-error"><p class="field-error" id="filter_fecha_inicio-error" hidden></p></div>
+              <div class="field"><label for="filter-fecha_fin">Fin del alquiler</label><input id="filter-fecha_fin" name="filter_fecha_fin" type="date" aria-describedby="filter-date-help filter_fecha_fin-error"><p class="field-error" id="filter_fecha_fin-error" hidden></p></div>
+            </div>
+            <p class="filter-help" id="filter-date-help">Las fechas son opcionales; completa ambas para consultar un periodo. Un alquiler puede durar un solo día.</p>
+            <p class="filter-help" id="filter-location-help">La ciudad indica la última ubicación registrada. Los equipos con ciudad por definir también aparecen para cualquier ciudad.</p>
+            <div class="filter-actions"><button class="search-button" id="search-equipment" type="submit">Buscar</button><button class="retry-button" id="clear-filters" type="button">Limpiar</button></div>
+          </form>
+          <p class="applied-filters" id="applied-filters" role="status" aria-live="polite"></p>
+          <div id="catalogue-status" class="catalogue-status" role="status" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span><p>Cargando maquinaria…</p>
+          </div>
+          <div class="equipment-grid" id="equipment-grid" aria-busy="true"></div>
+          <p class="catalogue-note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.2"/></svg> Las tarifas se muestran en dólares por día. El día de inicio y el día de fin se incluyen en el alquiler.</p>
+        </section>
 
-    let periodos = [];
-
-    function mostrarMensaje(texto, tipo) {
-      mensaje.textContent = texto;
-      mensaje.className = 'mensaje ' + tipo;
-    }
-
-    async function obtenerJSON(url, opciones) {
-      const respuesta = await fetch(url, opciones);
-      const datos = await respuesta.json();
-      if (!respuesta.ok) {
-        const error = new Error(datos.error?.message || 'Error del servidor.');
-        error.codigo = datos.error?.code;
-        throw error;
-      }
-      return datos;
-    }
-
-    async function cargarMaquinaria() {
-      try {
-        const maquinas = await obtenerJSON('/api/maquinaria');
-        maquinaria.replaceChildren();
-
-        const inicial = new Option('Selecciona una maquinaria', '');
-        maquinaria.add(inicial);
-
-        for (const maquina of maquinas) {
-          if (maquina.disponible) {
-            maquinaria.add(new Option(
-              `${maquina.nombre} - $${maquina.tarifa_diaria}/día`,
-              String(maquina.id)
-            ));
-          }
-        }
-
-        if (maquinaria.options.length === 1) {
-          ocupadas.textContent = 'No hay maquinaria disponible.';
-        }
-      } catch (error) {
-        maquinaria.replaceChildren(new Option('Error al cargar', ''));
-        mostrarMensaje(error.message, 'error');
-      }
-    }
-
-    async function cargarOcupadas() {
-      const id = maquinaria.value;
-      periodos = [];
-      ocupadas.replaceChildren();
-
-      if (!id) {
-        ocupadas.textContent = 'Selecciona una maquinaria.';
-        return;
-      }
-
-      ocupadas.textContent = 'Consultando fechas ocupadas...';
-
-      try {
-        const datos = await obtenerJSON(
-          '/api/reservas/ocupadas?maquinaria_id=' + encodeURIComponent(id)
-        );
-
-        if (maquinaria.value !== id) return;
-
-        periodos = datos;
-        ocupadas.replaceChildren();
-
-        if (datos.length === 0) {
-          ocupadas.textContent = 'No hay fechas ocupadas para esta maquinaria.';
-          return;
-        }
-
-        for (const periodo of datos) {
-          const elemento = document.createElement('div');
-          elemento.className = 'periodo';
-          elemento.textContent =
-            `Ocupada: ${periodo.fecha_inicio} al ${periodo.fecha_fin}`;
-          ocupadas.append(elemento);
-        }
-      } catch (error) {
-        ocupadas.textContent = 'No se pudo consultar la disponibilidad.';
-        mostrarMensaje(error.message, 'error');
-      }
-    }
-
-    function haySolapamiento(desde, hasta) {
-      return periodos.some(periodo =>
-        desde <= periodo.fecha_fin && hasta >= periodo.fecha_inicio
-      );
-    }
-
-    maquinaria.addEventListener('change', () => {
-      mostrarMensaje('', '');
-      cargarOcupadas();
-    });
-
-    inicio.addEventListener('change', () => {
-      fin.min = inicio.value;
-    });
-
-    formulario.addEventListener('submit', async (evento) => {
-      evento.preventDefault();
-
-      const desde = inicio.value;
-      const hasta = fin.value;
-
-      if (!maquinaria.value || !desde || !hasta || hasta < desde) {
-        mostrarMensaje('Revisa la maquinaria y las fechas.', 'error');
-        return;
-      }
-
-      if (haySolapamiento(desde, hasta)) {
-        mostrarMensaje(
-          'Estas fechas ya están reservadas. Selecciona otro período.',
-          'error'
-        );
-        return;
-      }
-
-      boton.disabled = true;
-      mostrarMensaje('Procesando reserva...', 'info');
-
-      try {
-        const contrato = await obtenerJSON('/api/contratos', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            maquinaria_id: Number(maquinaria.value),
-            cliente: document.querySelector('#cliente').value,
-            fecha_inicio: desde,
-            fecha_fin: hasta
-          })
-        });
-
-        mostrarMensaje(
-          `Reserva confirmada. Contrato: ${contrato.id}. ` +
-          `Total: $${contrato.total}. Estado: ${contrato.estado}.`,
-          'exito'
-        );
-
-        await cargarOcupadas();
-      } catch (error) {
-        if (error.codigo === 'DATE_CONFLICT') {
-          mostrarMensaje(
-            'La maquinaria ya está reservada en esas fechas.',
-            'error'
-          );
-          await cargarOcupadas();
-        } else {
-          mostrarMensaje(error.message, 'error');
-        }
-      } finally {
-        boton.disabled = false;
-      }
-    });
-
-    cargarMaquinaria();
-  </script>
-</body>
+        <aside class="booking-panel" id="contrato" aria-labelledby="booking-title">
+          <div class="panel-heading"><span class="step-label">TU ALQUILER</span><h2 id="booking-title">Configura tu contrato</h2><p>Todas las máquinas comparten cliente, ciudad y fechas.</p></div>
+          <section class="confirmation" id="confirmation" hidden tabindex="-1" aria-labelledby="confirmation-title">
+            <div class="success-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-8"/></svg></div>
+            <p class="eyebrow">CONTRATO CONFIRMADO</p>
+            <h3 id="confirmation-title">Tu obra puede seguir.</h3>
+            <p class="confirmation-copy">El contrato se guardó correctamente.</p>
+            <h4 class="confirmation-equipment-title">Maquinaria incluida</h4>
+            <ul class="confirmed-equipment" id="confirmed-equipment"></ul>
+            <dl class="confirmation-details" id="confirmation-details"></dl>
+            <div class="contract-id"><span>Número de contrato</span><code id="contract-id"></code></div>
+            <button class="primary-button" id="new-contract" type="button">Crear otro contrato <span aria-hidden="true">→</span></button>
+          </section>
+          <form id="booking-form" novalidate>
+            <section class="selected-equipment" id="selected-equipment" tabindex="-1" aria-labelledby="selection-heading" aria-describedby="selection-error">
+              <div class="selection-heading"><span class="selected-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18h16M7 18V9h10v9M9 9V5h6v4"/></svg></span><div><span class="selection-label" id="selection-heading">MAQUINARIA SELECCIONADA</span><p id="selected-name" role="status" aria-live="polite">Selecciona una o varias máquinas del catálogo</p></div></div>
+              <ul class="selected-list" id="selected-list" hidden></ul>
+              <button class="remove-all-button" id="clear-selection" type="button" hidden>Deseleccionar todas</button>
+              <p class="selection-error field-error" id="selection-error" role="alert" hidden></p>
+            </section>
+            <fieldset id="booking-fields">
+              <legend class="sr-only">Datos del contrato de alquiler</legend>
+              <div class="field"><label for="cliente">Nombre del cliente <span aria-hidden="true">*</span></label><input id="cliente" name="cliente" type="text" autocomplete="name" required maxlength="160" placeholder="Nombre completo o empresa" aria-describedby="cliente-error"><p class="field-error" id="cliente-error" hidden></p></div>
+              <div class="field"><label for="ciudad">Ciudad de la obra <span aria-hidden="true">*</span></label><input id="ciudad" name="ciudad" type="text" autocomplete="address-level2" required minlength="2" maxlength="100" placeholder="Ciudad donde se utilizará el equipo" aria-describedby="ciudad-error"><p class="field-error" id="ciudad-error" hidden></p></div>
+              <div class="date-fields">
+                <div class="field"><label for="fecha_inicio">Fecha de inicio <span aria-hidden="true">*</span></label><input id="fecha_inicio" name="fecha_inicio" type="date" required aria-describedby="fecha_inicio-error"><p class="field-error" id="fecha_inicio-error" hidden></p></div>
+                <div class="field"><label for="fecha_fin">Fecha de fin <span aria-hidden="true">*</span></label><input id="fecha_fin" name="fecha_fin" type="date" required aria-describedby="fecha_fin-error"><p class="field-error" id="fecha_fin-error" hidden></p></div>
+              </div>
+            </fieldset>
+            <div class="estimate" aria-live="polite" aria-atomic="true">
+              <div><span>Tarifa diaria total</span><strong id="daily-rate">—</strong></div>
+              <div><span>Duración del alquiler</span><strong id="rental-days">—</strong></div>
+              <div class="estimate-total"><span>Total estimado</span><strong id="estimated-total">—</strong></div>
+            </div>
+            <p class="form-error" id="form-error" role="alert" hidden></p>
+            <button class="primary-button" id="submit-contract" type="submit" disabled>Generar contrato <span aria-hidden="true">→</span></button>
+            <p class="form-note" id="form-note">Primero elige una o varias máquinas disponibles.</p>
+          </form>
+        </aside>
+      </div>
+    </main>
+    <footer class="site-footer"><span>Constructora El Salvador</span><span>Maquinaria para construir lo que sigue.</span></footer>
+    <noscript><div class="noscript">Activa JavaScript en tu navegador para consultar la maquinaria y generar un contrato.</div></noscript>
+  </body>
 </html>

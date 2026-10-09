@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: constructora-el-salvador
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: constructora-el-salvador-db
+          property: connectionString
+
+databases:
+  - name: constructora-el-salvador-db
+    plan: free
+    region: oregon
+    databaseName: constructora_el_salvador_db
+    user: constructora_el_salvador_db_user
+    ipAllowList: []

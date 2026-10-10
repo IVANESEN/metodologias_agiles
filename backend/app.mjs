@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mjs';
+import { buildContractPdf } from './contrato-pdf.mjs';
 
 const defaultFrontendDir = fileURLToPath(new URL('../frontend/', import.meta.url));
 const MAX_BODY_BYTES = 16_384;
@@ -350,6 +351,22 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         const { rows } = await database.query(`SELECT ${CONTRACT_COLUMNS} FROM contrato WHERE id = $1`, [id]);
         if (!rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
         return json(response, 200, buildContractDocument(await contractWithMachinery(database, rows[0])));
+      }
+      // El PDF se genera completo antes de responder: si algo falla, el cliente
+      // recibe un error JSON y nunca un PDF a medias.
+      const pdfMatch = /^\/api\/contratos\/([^/]+)\/pdf$/.exec(path);
+      if (pdfMatch && request.method === 'GET') {
+        const id = pdfMatch[1];
+        if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
+        const { rows } = await database.query(`SELECT ${CONTRACT_COLUMNS} FROM contrato WHERE id = $1`, [id]);
+        if (!rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
+        const contract = await contractWithMachinery(database, rows[0]);
+        const pdf = await buildContractPdf(contract);
+        response.writeHead(200, {
+          'Content-Type': 'application/pdf', 'Content-Length': pdf.length, 'Cache-Control': 'no-store',
+          'Content-Disposition': `attachment; filename="contrato-${contract.id}.pdf"`,
+        });
+        return response.end(pdf);
       }
       if (path.startsWith('/api/contratos/') && request.method === 'GET') {
         const id = path.slice('/api/contratos/'.length);

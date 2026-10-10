@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Sprint 0: catálogo y contratos de alquiler de maquinaria",
-  "engines": { "node": ">=24 <25" },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "start": "node --env-file-if-exists=.env backend/server.mjs",
     "dev": "node --env-file-if-exists=.env --watch backend/server.mjs",
@@ -14,6 +16,10 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",
+    "pdfkit": "0.20.2",
     "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "6.4.299"
   }
 }

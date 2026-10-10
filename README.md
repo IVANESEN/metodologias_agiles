@@ -3,6 +3,10 @@
 
 Sistema de alquiler de maquinaria. Incluye HU3 (consulta por tipo, fechas y ciudad) y contratos con una o varias máquinas.
 
+Sprint 1 también incluye reserva por fechas (HU8), formalización del contrato
+(HU6a), descarga de PDF (HU6b) y firma simulada desde el teléfono (HU7).
+Ver [SPRINT1_KEVIN.md](SPRINT1_KEVIN.md) para el alcance, API y pruebas de la firma.
+
 ## Ejecutar y probar
 
 Requiere Node.js 24.

@@ -87,6 +87,25 @@ function renderContract(doc, contract) {
     doc.moveDown(0.5);
   }
 
+  if (contract.firma) {
+    // Reservar espacio evita cortar la firma entre páginas. Las coordenadas
+    // guardadas se dibujan como vectores, también al descargar tras reiniciar.
+    if (doc.y + 155 > doc.page.height - doc.page.margins.bottom) doc.addPage();
+    heading(doc, 'Firma simulada del cliente');
+    const x = doc.page.margins.left;
+    const y = doc.y;
+    const scale = 0.45;
+    doc.save().lineWidth(1.2).strokeColor('#17202a').lineCap('round').lineJoin('round');
+    for (const trazo of contract.firma.trazos) {
+      doc.moveTo(x + trazo[0][0] * scale, y + trazo[0][1] * scale);
+      for (const [px, py] of trazo.slice(1)) doc.lineTo(x + px * scale, y + py * scale);
+      doc.stroke();
+    }
+    doc.restore();
+    doc.y = y + contract.firma.alto * scale + 8;
+    field(doc, 'Cliente firmante', contract.cliente);
+    field(doc, 'Firma registrada (UTC)', new Date(contract.firmado_en).toISOString());
+  }
   doc.moveDown(0.5).font(ITALIC).fontSize(9).text(safeText(documento.aviso), { align: 'center' });
 }
 

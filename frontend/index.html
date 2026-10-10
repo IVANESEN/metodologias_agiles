@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
-    <script src="/app.js" defer></script>
+    <script src="/app.js" type="module"></script>
   </head>
   <body>
     <a class="skip-link" href="#catalogo">Ir al catálogo</a>
@@ -80,6 +80,18 @@
             <dl class="confirmation-details" id="confirmation-details"></dl>
             <div class="contract-id"><span>Número de contrato</span><code id="contract-id"></code></div>
             <details class="contract-document" id="contract-document"><summary>Ver cláusulas del contrato</summary><div id="contract-clauses"></div></details>
+            <a class="contract-permalink" id="contract-permalink" href="#contrato">Enlace para reabrir este contrato en el teléfono</a>
+            <form class="signature-form" id="signature-form" novalidate aria-labelledby="signature-title">
+              <h4 id="signature-title">Firma simulada del cliente</h4>
+              <p id="signature-status" role="status" aria-live="polite"></p>
+              <p class="signature-help" id="signature-help">Firma dentro del recuadro con el dedo, lápiz o ratón. La firma guardada quedará vinculada a este contrato y se incluirá en el PDF.</p>
+              <canvas class="signature-canvas" id="signature-canvas" width="600" height="240" tabindex="0" aria-label="Dibuja tu firma con el dedo, lápiz o ratón" aria-describedby="signature-help signature-error">Tu navegador necesita soporte de canvas para dibujar la firma.</canvas>
+              <p class="field-error" id="signature-error" role="alert" hidden></p>
+              <div class="signature-actions" id="signature-actions">
+                <button class="retry-button" id="clear-signature" type="button">Limpiar</button>
+                <button class="primary-button" id="save-signature" type="submit" disabled>Guardar firma</button>
+              </div>
+            </form>
             <button class="primary-button" id="new-contract" type="button">Crear otro contrato <span aria-hidden="true">→</span></button>
           </section>
           <form id="booking-form" novalidate>

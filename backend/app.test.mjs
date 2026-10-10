@@ -18,9 +18,12 @@ async function closeServer(server) {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
+const terms = {
+  operador: 'Operador de prueba', seguro: 'TODO_RIESGO', forma_pago: 'TRANSFERENCIA',
+};
 const valid = {
   maquinaria_id: 1, cliente: 'Cliente de prueba', ciudad: 'San Salvador',
-  fecha_inicio: '2027-01-10', fecha_fin: '2027-01-12',
+  fecha_inicio: '2027-01-10', fecha_fin: '2027-01-12', ...terms,
 };
 
 test('API de alquiler con PostgreSQL embebido y persistencia real', async (t) => {
@@ -106,6 +109,8 @@ test('API de alquiler con PostgreSQL embebido y persistencia real', async (t) =>
       id: 'uuid', maquinaria_id: 1, maquinaria_nombre: 'CAT 336', cliente: 'Cliente de prueba', ciudad: 'San Salvador',
       fecha_inicio: valid.fecha_inicio, fecha_fin: valid.fecha_fin,
       dias: 3, tarifa_diaria: 450, total: 1350, estado: 'CONFIRMADO',
+      operador: 'Operador de prueba', operador_documento: null, seguro: 'TODO_RIESGO',
+      forma_pago: 'TRANSFERENCIA', condiciones_especiales: null,
       maquinarias: [{ maquinaria_id: 1, maquinaria_nombre: 'CAT 336', tarifa_diaria: 450, total: 1350 }],
     });
     assert.equal(result.response.headers.get('location'), `/api/contratos/${created.id}`);
@@ -402,7 +407,7 @@ test('un contrato reúne todas las máquinas con precios reales y escrituras at�
   });
   const input = {
     maquinaria_ids: [2, 1], cliente: 'Cliente múltiple', ciudad: 'Nueva Concepción',
-    fecha_inicio: '2029-01-10', fecha_fin: '2029-01-12',
+    fecha_inicio: '2029-01-10', fecha_fin: '2029-01-12', ...terms,
   };
   async function request(path, body) {
     const response = await fetch(base + path, body === undefined ? undefined : {

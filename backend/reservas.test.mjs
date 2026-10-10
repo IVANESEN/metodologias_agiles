@@ -47,7 +47,10 @@ test('HU8: las reservas confirmadas bloquean fechas', async (t) => {
       cliente: 'Cliente Sprint 1',
       ciudad: 'San Salvador',
       fecha_inicio: '2027-02-10',
-      fecha_fin: '2027-02-12'
+      fecha_fin: '2027-02-12',
+      operador: 'Operador Sprint 1',
+      seguro: 'TODO_RIESGO',
+      forma_pago: 'TRANSFERENCIA'
     })
   });
 
@@ -70,7 +73,10 @@ test('HU8: las reservas confirmadas bloquean fechas', async (t) => {
       cliente: 'Segundo cliente',
       ciudad: 'San Salvador',
       fecha_inicio: '2027-02-11',
-      fecha_fin: '2027-02-13'
+      fecha_fin: '2027-02-13',
+      operador: 'Operador Sprint 1',
+      seguro: 'TODO_RIESGO',
+      forma_pago: 'TRANSFERENCIA'
     })
   });
 

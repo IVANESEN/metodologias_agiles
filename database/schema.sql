@@ -56,3 +56,15 @@ CREATE INDEX IF NOT EXISTS contrato_maquinaria_equipo_idx
 
 CREATE INDEX IF NOT EXISTS contrato_maquinaria_fechas_idx
   ON contrato (maquinaria_id, fecha_inicio, fecha_fin);
+
+-- HU: formalización del contrato (operador, seguro y condiciones). Columnas
+-- aditivas y opcionales para no alterar contratos históricos.
+ALTER TABLE contrato ADD COLUMN IF NOT EXISTS operador VARCHAR(160)
+  CHECK (operador IS NULL OR length(trim(operador)) >= 2);
+ALTER TABLE contrato ADD COLUMN IF NOT EXISTS operador_documento VARCHAR(20);
+ALTER TABLE contrato ADD COLUMN IF NOT EXISTS seguro VARCHAR(30)
+  CHECK (seguro IS NULL OR seguro IN ('TODO_RIESGO', 'RESPONSABILIDAD_CIVIL', 'POR_CUENTA_DEL_CLIENTE'));
+ALTER TABLE contrato ADD COLUMN IF NOT EXISTS forma_pago VARCHAR(30)
+  CHECK (forma_pago IS NULL OR forma_pago IN ('EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'CREDITO_30_DIAS'));
+ALTER TABLE contrato ADD COLUMN IF NOT EXISTS condiciones_especiales TEXT
+  CHECK (condiciones_especiales IS NULL OR length(condiciones_especiales) <= 1000);

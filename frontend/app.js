@@ -407,10 +407,21 @@ function showConfirmation(contract) {
   );
   ui.contractId.textContent = contract.id;
   loadDocument(contract.id);
+  showPdfLink(contract.id);
   ui.form.hidden = true;
   ui.confirmation.hidden = false;
   ui.confirmation.focus({ preventScroll: true });
   if (window.matchMedia('(max-width: 780px)').matches) ui.confirmation.scrollIntoView({ behavior: 'auto', block: 'start' });
+}
+
+// HU6b: enlace para descargar el contrato en PDF, debajo de las cláusulas.
+function showPdfLink(id) {
+  document.getElementById('contract-pdf')?.remove();
+  const link = element('a', 'select-button', 'Descargar PDF');
+  link.id = 'contract-pdf';
+  link.setAttribute('href', `/api/contratos/${encodeURIComponent(id)}/pdf`);
+  link.setAttribute('download', `contrato-${id}.pdf`);
+  ui.documentBox.after(link);
 }
 
 async function loadDocument(id) {

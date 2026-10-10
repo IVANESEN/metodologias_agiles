@@ -16,6 +16,13 @@ const ui = {
   fields: document.getElementById('booking-fields'),
   cliente: document.getElementById('cliente'),
   ciudad: document.getElementById('ciudad'),
+  operador: document.getElementById('operador'),
+  operadorDocumento: document.getElementById('operador_documento'),
+  seguro: document.getElementById('seguro'),
+  formaPago: document.getElementById('forma_pago'),
+  condiciones: document.getElementById('condiciones_especiales'),
+  clauses: document.getElementById('contract-clauses'),
+  documentBox: document.getElementById('contract-document'),
   inicio: document.getElementById('fecha_inicio'),
   fin: document.getElementById('fecha_fin'),
   selection: document.getElementById('selected-equipment'),
@@ -83,7 +90,7 @@ function clearErrors() {
   ui.selection.removeAttribute('aria-invalid');
   ui.selectionError.textContent = '';
   ui.selectionError.hidden = true;
-  for (const field of [ui.cliente, ui.ciudad, ui.inicio, ui.fin]) {
+  for (const field of [ui.cliente, ui.ciudad, ui.operador, ui.operadorDocumento, ui.seguro, ui.formaPago, ui.condiciones, ui.inicio, ui.fin]) {
     field.removeAttribute('aria-invalid');
     const message = document.getElementById(`${field.name}-error`);
     message.textContent = '';
@@ -330,6 +337,14 @@ function validateForm() {
   const city = ui.ciudad.value.trim();
   if (city.length < 2) fail(ui.ciudad, 'Escribe una ciudad de al menos 2 caracteres.');
   if (city.length > 100) fail(ui.ciudad, 'Usa un máximo de 100 caracteres.');
+  const operator = ui.operador.value.trim();
+  if (!operator) fail(ui.operador, 'Indica el operador asignado.');
+  else if (operator.length < 2) fail(ui.operador, 'Escribe un nombre de al menos 2 caracteres.');
+  const dui = ui.operadorDocumento.value.trim();
+  if (dui && !/^\d{8}-\d$/.test(dui)) fail(ui.operadorDocumento, 'Usa el formato 00000000-0.');
+  if (!ui.seguro.value) fail(ui.seguro, 'Selecciona el seguro del equipo.');
+  if (!ui.formaPago.value) fail(ui.formaPago, 'Selecciona la forma de pago.');
+  if (ui.condiciones.value.trim().length > 1000) fail(ui.condiciones, 'Usa un máximo de 1000 caracteres.');
   const start = dateValue(ui.inicio.value);
   const end = dateValue(ui.fin.value);
   if (start === null) fail(ui.inicio, 'Selecciona una fecha de inicio válida.');
@@ -381,6 +396,9 @@ function showConfirmation(contract) {
     confirmationRow('Máquinas', String(contract.maquinarias.length)),
     confirmationRow('Cliente', contract.cliente),
     confirmationRow('Ciudad de la obra', contract.ciudad || 'Ciudad por definir'),
+    confirmationRow('Operador', contract.operador || 'Por designar'),
+    confirmationRow('Seguro', ui.seguro.selectedOptions[0]?.textContent || contract.seguro || '—'),
+    confirmationRow('Forma de pago', ui.formaPago.selectedOptions[0]?.textContent || contract.forma_pago || '—'),
     confirmationRow('Inicio', dateDisplay.format(new Date(start))),
     confirmationRow('Fin', dateDisplay.format(new Date(end))),
     confirmationRow('Duración', `${contract.dias} ${contract.dias === 1 ? 'día' : 'días'}`),
@@ -388,15 +406,33 @@ function showConfirmation(contract) {
     confirmationRow('Total', money.format(contract.total), 'confirmed-total'),
   );
   ui.contractId.textContent = contract.id;
+  loadDocument(contract.id);
   ui.form.hidden = true;
   ui.confirmation.hidden = false;
   ui.confirmation.focus({ preventScroll: true });
   if (window.matchMedia('(max-width: 780px)').matches) ui.confirmation.scrollIntoView({ behavior: 'auto', block: 'start' });
 }
 
+async function loadDocument(id) {
+  ui.clauses.replaceChildren();
+  ui.documentBox.open = false;
+  try {
+    const response = await fetch(`/api/contratos/${encodeURIComponent(id)}/documento`, { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error('documento');
+    const documento = await response.json();
+    ui.clauses.append(element('h4', '', documento.titulo));
+    for (const clause of documento.clausulas) {
+      ui.clauses.append(element('h5', '', clause.titulo), element('p', '', clause.texto));
+    }
+    if (documento.aviso) ui.clauses.append(element('p', 'form-note', documento.aviso));
+  } catch {
+    ui.clauses.append(element('p', '', 'No se pudieron cargar las cláusulas. El contrato sí quedó guardado.'));
+  }
+}
+
 function applyServerErrors(error) {
   if (!error.fields || typeof error.fields !== 'object') return;
-  const fieldMap = { cliente: ui.cliente, ciudad: ui.ciudad, fecha_inicio: ui.inicio, fecha_fin: ui.fin };
+  const fieldMap = { cliente: ui.cliente, ciudad: ui.ciudad, operador: ui.operador, operador_documento: ui.operadorDocumento, seguro: ui.seguro, forma_pago: ui.formaPago, condiciones_especiales: ui.condiciones, fecha_inicio: ui.inicio, fecha_fin: ui.fin };
   let firstInvalid = null;
   for (const [name, value] of Object.entries(error.fields)) {
     const field = fieldMap[name];
@@ -413,7 +449,7 @@ function applyServerErrors(error) {
 ui.form.addEventListener('submit', async event => {
   event.preventDefault();
   if (state.submitting || state.loading || !validateForm()) return;
-  const payload = { maquinaria_ids: [...state.selected.keys()], cliente: ui.cliente.value.trim(), ciudad: ui.ciudad.value.trim(), fecha_inicio: ui.inicio.value, fecha_fin: ui.fin.value };
+  const payload = { maquinaria_ids: [...state.selected.keys()], cliente: ui.cliente.value.trim(), ciudad: ui.ciudad.value.trim(), operador: ui.operador.value.trim(), operador_documento: ui.operadorDocumento.value.trim(), seguro: ui.seguro.value, forma_pago: ui.formaPago.value, condiciones_especiales: ui.condiciones.value.trim(), fecha_inicio: ui.inicio.value, fecha_fin: ui.fin.value };
   state.submitting = true;
   ui.fields.disabled = true;
   ui.submit.textContent = 'Generando contrato…';
@@ -454,7 +490,7 @@ ui.inicio.addEventListener('input', () => {
   updateEstimate();
 });
 ui.fin.addEventListener('input', () => { clearErrors(); updateEstimate(); });
-for (const field of [ui.cliente, ui.ciudad]) field.addEventListener('input', () => {
+for (const field of [ui.cliente, ui.ciudad, ui.operador, ui.operadorDocumento, ui.seguro, ui.formaPago, ui.condiciones]) field.addEventListener('input', () => {
   field.removeAttribute('aria-invalid');
   document.getElementById(`${field.name}-error`).hidden = true;
   ui.error.hidden = true;

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mjs';
 
 const defaultFrontendDir = fileURLToPath(new URL('../frontend/', import.meta.url));
 const MAX_BODY_BYTES = 16_384;
@@ -16,7 +17,8 @@ const MIME = {
   '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
 };
 const CONTRACT_COLUMNS = `id, maquinaria_id, maquinaria_nombre, cliente, ciudad,
-  fecha_inicio::text, fecha_fin::text, dias, tarifa_diaria, total, estado`;
+  fecha_inicio::text, fecha_fin::text, dias, tarifa_diaria, total, estado,
+  operador, operador_documento, seguro, forma_pago, condiciones_especiales`;
 
 export class ApiError extends Error {
   constructor(status, code, message, fields) {
@@ -159,10 +161,34 @@ export function validateContract(body) {
   if (ciudad.length < 2 || ciudad.length > 100 || /[\u0000-\u001f\u007f]/.test(ciudad)) {
     fields.ciudad = 'Escribe la ciudad de la obra (2 a 100 caracteres).';
   }
+  const REQUIRED = 'Este campo es obligatorio.';
+  const text = (value) => (typeof value === 'string' ? value.trim() : '');
+  const operador = text(body.operador);
+  if (!operador) fields.operador = REQUIRED;
+  else if (operador.length < 2 || operador.length > 160 || /[\u0000-\u001f\u007f]/.test(operador)) {
+    fields.operador = 'Escribe el nombre del operador asignado (2 a 160 caracteres).';
+  }
+  const operador_documento = text(body.operador_documento);
+  if (operador_documento && !/^\d{8}-\d$/.test(operador_documento)) {
+    fields.operador_documento = 'Usa el formato del DUI: 00000000-0.';
+  }
+  const seguro = text(body.seguro);
+  if (!seguro) fields.seguro = REQUIRED;
+  else if (!Object.hasOwn(SEGUROS, seguro)) fields.seguro = 'Selecciona un tipo de seguro válido.';
+  const forma_pago = text(body.forma_pago);
+  if (!forma_pago) fields.forma_pago = REQUIRED;
+  else if (!Object.hasOwn(FORMAS_PAGO, forma_pago)) fields.forma_pago = 'Selecciona una forma de pago válida.';
+  const condiciones_especiales = text(body.condiciones_especiales);
+  if (condiciones_especiales.length > 1000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(condiciones_especiales)) {
+    fields.condiciones_especiales = 'Usa un máximo de 1000 caracteres.';
+  }
+  for (const name of ['cliente', 'ciudad', 'fecha_inicio', 'fecha_fin']) {
+    if (body[name] === undefined || body[name] === null || text(body[name]) === '') fields[name] = REQUIRED;
+  }
   const start = parseDate(body.fecha_inicio);
   const end = parseDate(body.fecha_fin);
-  if (start === null) fields.fecha_inicio = 'Usa una fecha válida con formato AAAA-MM-DD.';
-  if (end === null) fields.fecha_fin = 'Usa una fecha válida con formato AAAA-MM-DD.';
+  if (start === null && !fields.fecha_inicio) fields.fecha_inicio = 'Usa una fecha válida con formato AAAA-MM-DD.';
+  if (end === null && !fields.fecha_fin) fields.fecha_fin = 'Usa una fecha válida con formato AAAA-MM-DD.';
   if (start !== null && end !== null && end < start) {
     fields.fecha_fin = 'La fecha de fin debe ser igual o posterior a la fecha de inicio.';
   }
@@ -171,6 +197,8 @@ export function validateContract(body) {
   }
   return {
     maquinaria_ids: ids.toSorted((a, b) => a - b), cliente, ciudad,
+    operador, operador_documento: operador_documento || null, seguro, forma_pago,
+    condiciones_especiales: condiciones_especiales || null,
     fecha_inicio: body.fecha_inicio, fecha_fin: body.fecha_fin,
     dias: Math.round((end - start) / DAY_MS) + 1,
   };
@@ -224,11 +252,14 @@ export async function saveContract(database, input) {
     const firstMachine = machines[0];
     const result = await tx.query(
       `INSERT INTO contrato
-       (id, maquinaria_id, maquinaria_nombre, cliente, fecha_inicio, fecha_fin, dias, tarifa_diaria, total, ciudad)
-       VALUES ($1, $2, $3, $4, $5::date, $6::date, $7::integer, $8::numeric, $7::integer * $8::numeric, $9)
+       (id, maquinaria_id, maquinaria_nombre, cliente, fecha_inicio, fecha_fin, dias, tarifa_diaria, total, ciudad,
+        operador, operador_documento, seguro, forma_pago, condiciones_especiales)
+       VALUES ($1, $2, $3, $4, $5::date, $6::date, $7::integer, $8::numeric, $7::integer * $8::numeric, $9,
+        $10, $11, $12, $13, $14)
        RETURNING ${CONTRACT_COLUMNS}`,
       [id, firstMachine.id, firstMachine.nombre, input.cliente, input.fecha_inicio,
-        input.fecha_fin, input.dias, tariff.rows[0].tarifa, input.ciudad],
+        input.fecha_fin, input.dias, tariff.rows[0].tarifa, input.ciudad,
+        input.operador, input.operador_documento, input.seguro, input.forma_pago, input.condiciones_especiales],
     );
     await tx.query(
       `INSERT INTO contrato_maquinaria (contrato_id, maquinaria_id, maquinaria_nombre, tarifa_diaria)
@@ -311,6 +342,14 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         const contract = await saveContract(database, input);
         response.setHeader('Location', `/api/contratos/${contract.id}`);
         return json(response, 201, contract);
+      }
+      const documentMatch = /^\/api\/contratos\/([^/]+)\/documento$/.exec(path);
+      if (documentMatch && request.method === 'GET') {
+        const id = documentMatch[1];
+        if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
+        const { rows } = await database.query(`SELECT ${CONTRACT_COLUMNS} FROM contrato WHERE id = $1`, [id]);
+        if (!rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
+        return json(response, 200, buildContractDocument(await contractWithMachinery(database, rows[0])));
       }
       if (path.startsWith('/api/contratos/') && request.method === 'GET') {
         const id = path.slice('/api/contratos/'.length);

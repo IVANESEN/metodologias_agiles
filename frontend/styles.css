@@ -243,3 +243,10 @@ fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+.field textarea { width: 100%; min-width: 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--text); font: inherit; font-size: 14px; line-height: 1.5; resize: vertical; }
+.field textarea[aria-invalid="true"] { border-color: var(--error); }
+.contract-document { margin: 16px 0; }
+.contract-document summary { cursor: pointer; font-weight: 600; }
+.contract-document h4, .contract-document h5 { margin: 16px 0 4px; }
+.contract-document p { margin: 0 0 8px; line-height: 1.5; }

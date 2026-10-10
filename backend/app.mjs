@@ -5,6 +5,7 @@ import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mjs';
 import { buildContractPdf } from './contrato-pdf.mjs';
+import { normalizeSignature } from '../frontend/firma-datos.mjs';
 
 const defaultFrontendDir = fileURLToPath(new URL('../frontend/', import.meta.url));
 const MAX_BODY_BYTES = 16_384;
@@ -19,7 +20,8 @@ const MIME = {
 };
 const CONTRACT_COLUMNS = `id, maquinaria_id, maquinaria_nombre, cliente, ciudad,
   fecha_inicio::text, fecha_fin::text, dias, tarifa_diaria, total, estado,
-  operador, operador_documento, seguro, forma_pago, condiciones_especiales`;
+  operador, operador_documento, seguro, forma_pago, condiciones_especiales,
+  firma, firmado_en::text`;
 
 export class ApiError extends Error {
   constructor(status, code, message, fields) {
@@ -39,11 +41,11 @@ function json(response, status, payload) {
   response.end(body);
 }
 
-async function readJson(request) {
+async function readJson(request, maxBytes = MAX_BODY_BYTES) {
   if (!/^application\/json(?:\s*;|\s*$)/i.test(request.headers['content-type'] || '')) {
     throw new ApiError(415, 'CONTENT_TYPE', 'Envía los datos como application/json.');
   }
-  if (Number(request.headers['content-length']) > MAX_BODY_BYTES) {
+  if (Number(request.headers['content-length']) > maxBytes) {
     request.resume();
     throw new ApiError(413, 'BODY_TOO_LARGE', 'La solicitud es demasiado grande.');
   }
@@ -53,7 +55,7 @@ async function readJson(request) {
     let rejected = false;
     request.on('data', (chunk) => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > maxBytes) {
         if (!rejected) reject(new ApiError(413, 'BODY_TOO_LARGE', 'La solicitud es demasiado grande.'));
         rejected = true;
         // Keep draining the stream so the HTTP response can reach the client.
@@ -274,6 +276,29 @@ export async function saveContract(database, input) {
   });
 }
 
+export async function saveSignature(database, id, body) {
+  let firma;
+  try { firma = normalizeSignature(body?.firma); }
+  catch (error) {
+    throw new ApiError(400, 'VALIDATION_ERROR', error.message, { firma: error.message });
+  }
+  // Una actualización condicional protege la firma incluso si dos teléfonos
+  // envían al mismo tiempo. La fecha la asigna la base de datos.
+  const { rows } = await database.query(
+    `UPDATE contrato SET firma = $2::jsonb, firmado_en = CURRENT_TIMESTAMP
+     WHERE id = $1 AND firma IS NULL RETURNING id AS contrato_id, firma, firmado_en::text`,
+    [id, JSON.stringify(firma)],
+  );
+  if (rows[0]) return rows[0];
+  const existing = await database.query(
+    'SELECT id AS contrato_id, firma, firmado_en::text FROM contrato WHERE id = $1', [id],
+  );
+  if (!existing.rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
+  // Reintentar el mismo envío tras perder conexión no modifica la firma ni su fecha.
+  if (JSON.stringify(normalizeSignature(existing.rows[0].firma)) === JSON.stringify(firma)) return existing.rows[0];
+  throw new ApiError(409, 'CONTRACT_ALREADY_SIGNED', 'El contrato ya tiene una firma guardada y no se puede reemplazar.');
+}
+
 async function serveFile(request, response, pathname, frontendDir) {
   let decoded;
   try { decoded = decodeURIComponent(pathname); }
@@ -343,6 +368,13 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         const contract = await saveContract(database, input);
         response.setHeader('Location', `/api/contratos/${contract.id}`);
         return json(response, 201, contract);
+      }
+      const signatureMatch = /^\/api\/contratos\/([^/]+)\/firma$/.exec(path);
+      if (signatureMatch) {
+        if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
+        const id = signatureMatch[1];
+        if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
+        return json(response, 200, await saveSignature(database, id, await readJson(request, 131_072)));
       }
       const documentMatch = /^\/api\/contratos\/([^/]+)\/documento$/.exec(path);
       if (documentMatch && request.method === 'GET') {

@@ -68,3 +68,7 @@ ALTER TABLE contrato ADD COLUMN IF NOT EXISTS forma_pago VARCHAR(30)
   CHECK (forma_pago IS NULL OR forma_pago IN ('EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'CREDITO_30_DIAS'));
 ALTER TABLE contrato ADD COLUMN IF NOT EXISTS condiciones_especiales TEXT
   CHECK (condiciones_especiales IS NULL OR length(condiciones_especiales) <= 1000);
+
+-- HU7: firma simulada persistente. Los contratos anteriores siguen sin firma.
+ALTER TABLE contrato ADD COLUMN IF NOT EXISTS firma JSONB;
+ALTER TABLE contrato ADD COLUMN IF NOT EXISTS firmado_en TIMESTAMPTZ;

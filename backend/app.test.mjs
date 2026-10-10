@@ -111,6 +111,7 @@ test('API de alquiler con PostgreSQL embebido y persistencia real', async (t) =>
       dias: 3, tarifa_diaria: 450, total: 1350, estado: 'CONFIRMADO',
       operador: 'Operador de prueba', operador_documento: null, seguro: 'TODO_RIESGO',
       forma_pago: 'TRANSFERENCIA', condiciones_especiales: null,
+      firma: null, firmado_en: null,
       maquinarias: [{ maquinaria_id: 1, maquinaria_nombre: 'CAT 336', tarifa_diaria: 450, total: 1350 }],
     });
     assert.equal(result.response.headers.get('location'), `/api/contratos/${created.id}`);

@@ -1,4 +1,5 @@
 'use strict';
+import { createSignaturePanel } from './firma.js';
 
 const ui = {
   grid: document.getElementById('equipment-grid'),
@@ -44,6 +45,12 @@ const ui = {
 };
 const emptyFilters = () => ({ tipo: '', ubicacion: '', fecha_inicio: '', fecha_fin: '' });
 const state = { equipment: [], selected: new Map(), loading: false, submitting: false, filters: emptyFilters(), types: new Set(), typesInitialized: false, catalogueRequest: 0, catalogueController: null };
+state.signing = false;
+const signaturePanel = createSignaturePanel(readResponse, busy => {
+  state.signing = busy;
+  renderEquipment();
+  updateEstimate();
+});
 const money = new Intl.NumberFormat('es-SV', { style: 'currency', currency: 'USD' });
 const dateDisplay = new Intl.DateTimeFormat('es-SV', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const DAY_MS = 86400000;
@@ -149,7 +156,7 @@ function updateEstimate() {
   ui.days.textContent = days ? `${days} ${days === 1 ? 'día' : 'días'}` : '—';
   ui.total.textContent = count && days ? money.format(rate * days) : '—';
   ui.submit.disabled = !count || state.loading || state.submitting;
-  ui.newContract.disabled = state.submitting;
+  ui.newContract.disabled = state.submitting || state.signing;
   for (const control of ui.filters.querySelectorAll('input, select, button')) control.disabled = state.submitting;
   if (!count) ui.note.textContent = 'Primero elige una o varias máquinas disponibles.';
   else if (state.filters.fecha_inicio) ui.note.textContent = `Esta búsqueda comprueba del ${state.filters.fecha_inicio} al ${state.filters.fecha_fin}. Todas las máquinas elegidas se comprobarán juntas para las fechas del contrato al guardarlo.`;
@@ -168,7 +175,7 @@ function removeEquipment(id, focusSummary = false) {
 }
 
 function selectEquipment(item) {
-  if (state.loading || state.submitting) return;
+  if (state.loading || state.submitting || state.signing) return;
   if (state.selected.has(item.id)) {
     removeEquipment(item.id);
     document.getElementById(`select-equipment-${item.id}`)?.focus({ preventScroll: true });
@@ -183,6 +190,7 @@ function selectEquipment(item) {
     ui.fin.min = state.filters.fecha_inicio;
   }
   if (!ui.confirmation.hidden) {
+    window.history.replaceState(null, '', `${window.location.pathname}#contrato`);
     ui.confirmation.hidden = true;
     ui.form.hidden = false;
   }
@@ -208,7 +216,7 @@ function renderEquipment() {
     const button = element('button', 'select-button', selected ? 'Deseleccionar' : item.disponible ? 'Seleccionar' : 'No disponible');
     button.type = 'button';
     button.id = `select-equipment-${item.id}`;
-    button.disabled = (!item.disponible && !selected) || state.loading || state.submitting;
+    button.disabled = (!item.disponible && !selected) || state.loading || state.submitting || state.signing;
     button.setAttribute('aria-pressed', String(selected));
     button.setAttribute('aria-label', `${selected ? 'Deseleccionar' : 'Seleccionar'} ${item.nombre}`);
     button.addEventListener('click', () => selectEquipment(item));
@@ -397,8 +405,8 @@ function showConfirmation(contract) {
     confirmationRow('Cliente', contract.cliente),
     confirmationRow('Ciudad de la obra', contract.ciudad || 'Ciudad por definir'),
     confirmationRow('Operador', contract.operador || 'Por designar'),
-    confirmationRow('Seguro', ui.seguro.selectedOptions[0]?.textContent || contract.seguro || '—'),
-    confirmationRow('Forma de pago', ui.formaPago.selectedOptions[0]?.textContent || contract.forma_pago || '—'),
+    confirmationRow('Seguro', [...ui.seguro.options].find(option => option.value === contract.seguro)?.textContent || contract.seguro || '—'),
+    confirmationRow('Forma de pago', [...ui.formaPago.options].find(option => option.value === contract.forma_pago)?.textContent || contract.forma_pago || '—'),
     confirmationRow('Inicio', dateDisplay.format(new Date(start))),
     confirmationRow('Fin', dateDisplay.format(new Date(end))),
     confirmationRow('Duración', `${contract.dias} ${contract.dias === 1 ? 'día' : 'días'}`),
@@ -408,6 +416,12 @@ function showConfirmation(contract) {
   ui.contractId.textContent = contract.id;
   loadDocument(contract.id);
   showPdfLink(contract.id);
+  signaturePanel.show(contract);
+  const permalink = new URL(window.location.href);
+  permalink.search = new URLSearchParams({ contrato: contract.id }).toString();
+  permalink.hash = 'contrato';
+  document.getElementById('contract-permalink').href = permalink.href;
+  window.history.replaceState(null, '', permalink);
   ui.form.hidden = true;
   ui.confirmation.hidden = false;
   ui.confirmation.focus({ preventScroll: true });
@@ -507,7 +521,8 @@ for (const field of [ui.cliente, ui.ciudad, ui.operador, ui.operadorDocumento, u
   ui.error.hidden = true;
 });
 ui.newContract.addEventListener('click', () => {
-  if (state.submitting) return;
+  if (state.submitting || state.signing) return;
+  window.history.replaceState(null, '', `${window.location.pathname}#contrato`);
   state.selected.clear();
   ui.form.reset();
   resetDates();
@@ -571,3 +586,19 @@ for (const field of [ui.ubicacion, ui.filterInicio, ui.filterFin]) field.addEven
 resetDates();
 updateEstimate();
 loadEquipment();
+
+// El enlace permite recuperar el mismo contrato y su firma desde otro teléfono
+// o después de recargar, sin generar una nueva reserva.
+const savedContractId = new URLSearchParams(window.location.search).get('contrato');
+if (savedContractId) {
+  ui.newContract.disabled = true;
+  ui.form.hidden = true;
+  try {
+    const contract = await readResponse(await fetch(`/api/contratos/${encodeURIComponent(savedContractId)}`, { cache: 'no-store' }));
+    showConfirmation(contract);
+  } catch (error) {
+    ui.form.hidden = false;
+    formError(error instanceof TypeError ? 'No se pudo conectar para recuperar el contrato. Recarga la página para volver a intentarlo.' : error.message);
+    ui.error.scrollIntoView({ block: 'center' });
+  } finally { updateEstimate(); }
+}

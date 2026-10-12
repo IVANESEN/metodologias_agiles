@@ -1,0 +1,111 @@
+name: CI - Pipeline
+
+# El PDF exige ejecutar CI con los cambios de cualquier integrante.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CI: 'true'
+
+jobs:
+  build:
+    name: Build (dependencias y sintaxis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Preparar Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Instalar dependencias desde el lockfile
+        run: npm ci
+
+      # El proyecto ejecuta JS directamente y no tiene un script build.
+      # Se comprueba la sintaxis del backend, frontend y pruebas.
+      - name: Verificar fuentes JavaScript
+        run: |
+          while IFS= read -r -d '' file; do
+            echo "Verificando $file"
+            node --check "$file"
+          done < <(git ls-files -z -- '*.js' '*.mjs')
+
+  test:
+    name: Pruebas
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Preparar Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # Cada job usa una maquina independiente. La cache contiene descargas,
+      # no node_modules: npm ci instala nuevamente todas las dependencias.
+      - name: Instalar dependencias de ejecucion y pruebas
+        run: npm ci
+
+      - name: Comprobar que existen archivos de pruebas
+        run: |
+          test_files=(backend/*.test.mjs)
+          if [[ ! -f "${test_files[0]}" ]]; then
+            echo '::error::No existen pruebas en backend/*.test.mjs'
+            exit 1
+          fi
+
+      # npm test ejecuta node --test backend/*.test.mjs.
+      # Las pruebas crean sus propias bases temporales PGlite.
+      - name: Ejecutar las pruebas reales del equipo
+        run: npm test
+
+  report:
+    name: Resultado CI
+    needs: [build, test]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Publicar el resultado y conservar los fallos
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          {
+            echo '## Resultado del pipeline'
+            echo '| Etapa | Resultado |'
+            echo '| --- | --- |'
+            echo "| Build | $BUILD_RESULT |"
+            echo "| Pruebas | $TEST_RESULT |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$BUILD_RESULT" != 'success' || "$TEST_RESULT" != 'success' ]]; then
+            echo 'CI en rojo: revisar el job fallido antes de integrar.' >> "$GITHUB_STEP_SUMMARY"
+            echo '::error::Build o pruebas no finalizaron correctamente.'
+            exit 1
+          fi
+
+          echo 'CI en verde: dependencias, sintaxis y pruebas verificadas.' >> "$GITHUB_STEP_SUMMARY"

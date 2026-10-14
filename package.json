@@ -11,8 +11,9 @@
     "start": "node --env-file-if-exists=.env backend/server.mjs",
     "dev": "node --env-file-if-exists=.env --watch backend/server.mjs",
     "test": "node --test backend/*.test.mjs",
+    "db:inspect": "node --env-file-if-exists=.env backend/inspect-db.mjs",
     "db:init": "node --env-file-if-exists=.env backend/init-db.mjs",
-    "db:seed": "node --env-file-if-exists=.env backend/init-db.mjs"
+    "db:verify": "node --env-file-if-exists=.env backend/verify-db.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",

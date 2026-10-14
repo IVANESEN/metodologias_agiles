@@ -147,8 +147,60 @@ function renderSelection() {
   }
 }
 
+
+let consultaFechasActual = 0;
+
+async function actualizarFechasOcupadas() {
+  const panel = document.getElementById('fechas-ocupadas');
+  if (!panel) return;
+
+  const consulta = ++consultaFechasActual;
+  const maquinas = [...state.selected.values()];
+
+  if (!maquinas.length) {
+    panel.hidden = true;
+    panel.textContent = '';
+    return;
+  }
+
+  panel.hidden = false;
+  panel.textContent = 'Consultando fechas ocupadas…';
+
+  try {
+    const resultados = await Promise.all(maquinas.map(async maquina => {
+      const response = await fetch(
+        `/api/reservas/ocupadas?maquinaria_id=${encodeURIComponent(maquina.id)}`,
+        { headers: { Accept: 'application/json' }, cache: 'no-store' }
+      );
+
+      if (!response.ok) throw new Error('No se pudieron consultar las fechas ocupadas.');
+
+      return {
+        nombre: maquina.nombre,
+        periodos: await response.json()
+      };
+    }));
+
+    if (consulta !== consultaFechasActual) return;
+
+    const mensajes = resultados.flatMap(resultado =>
+      resultado.periodos.map(periodo =>
+        `${resultado.nombre}: ${periodo.fecha_inicio} al ${periodo.fecha_fin}`
+      )
+    );
+
+    panel.textContent = mensajes.length
+      ? `Fechas ocupadas: ${mensajes.join(' | ')}`
+      : 'Las máquinas seleccionadas no tienen reservas confirmadas.';
+  } catch {
+    if (consulta !== consultaFechasActual) return;
+    panel.textContent = 'No se pudieron consultar las fechas ocupadas. La disponibilidad se verificará al confirmar el contrato.';
+  }
+}
+
 function updateEstimate() {
   renderSelection();
+  actualizarFechasOcupadas();
   const count = state.selected.size;
   const rate = [...state.selected.values()].reduce((sum, item) => sum + item.tarifa_diaria, 0);
   const days = inclusiveDays();

@@ -16,12 +16,68 @@ npm ci
 npm test
 npm start
 ```
+Si el entorno restringe procesos y `npm test` falla con `spawn EPERM`, ejecuta `node --test --test-isolation=none backend/*.test.mjs`.
 si lo tienes instalado
 ```sh
 npm.cmd start
 ```
 
-Abrir `http://localhost:3000`. En desarrollo, sin `DATABASE_URL`, se usa PostgreSQL embebido (PGlite) y los datos se conservan en `data/`. En producción se requiere `DATABASE_URL` de PostgreSQL. El inicio aplica el esquema y sus cambios de forma idempotente; conserva los equipos y contratos existentes.
+Abrir `http://localhost:3000`. En desarrollo, sin `DATABASE_URL`, se usa PostgreSQL embebido (PGlite) y los datos se conservan en `data/`. En producción se requiere `DATABASE_URL` de PostgreSQL. Solo PGlite aplica el esquema y sus cambios al iniciar; una base remota debe inspeccionarse e inicializarse explícitamente como se explica a continuación.
+
+## Conexión local a Supabase
+
+El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añadir el SDK de Supabase. Esta guía prepara únicamente la ejecución local con el proyecto **Constructora_ElSalvador**, referencia `hqhkpuaxnisfxicvjsmn`.
+
+1. En el panel de Supabase, abre ese proyecto y selecciona **Connect → Session pooler → URI**. Copia personalmente la cadena PostgreSQL del panel; conserva exactamente su host, puerto, usuario y base. La URL HTTPS del proyecto no es una cadena PostgreSQL. La región no permite deducir el host del pooler. [Guía oficial de conexión](https://supabase.com/docs/guides/database/connecting-to-postgres).
+
+2. En PowerShell, dentro del repositorio, crea `.env` únicamente si todavía no existe:
+
+   ```powershell
+   if (-not (Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Destination .env }
+   ```
+
+   Abre `.env` en tu editor y sustituye personalmente el marcador de `DATABASE_URL` por la cadena del panel, entre comillas dobles. Sustituye `[YOUR-PASSWORD]` por la contraseña de la base. No pegues la contraseña ni la cadena en el chat, comandos de terminal, capturas o commits. `.env` está excluido de Git; `.env.example` contiene solo marcadores.
+
+   Codifica únicamente la contraseña para la URI: `@` → `%40`, `:` → `%3A`, `/` → `%2F`, `?` → `%3F`, `#` → `%23`, `%` → `%25`, `+` → `%2B`, `&` → `%26` y espacio → `%20`. No codifiques toda la cadena ni vuelvas a codificar una contraseña que ya lo esté. Realiza la conversión localmente, sin enviar el secreto a sitios web.
+
+3. Conserva `SUPABASE_PROJECT_REF=hqhkpuaxnisfxicvjsmn`, `DATABASE_SCHEMA=constructora_private` y `DATABASE_SSL_CA_FILE=database/certs/supabase-prod-ca-2021.crt`, como indica `.env.example`. El repositorio incluye ese certificado raíz público de Supabase; no contiene credenciales. Su procedencia es la propiedad `ssl:certificate_url` del [código oficial de Supabase Studio](https://github.com/supabase/supabase/blob/master/apps/studio/hooks/custom-content/custom-content.json), que apunta a esta [descarga HTTPS del certificado de producción](https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt).
+
+   El cliente valida el proyecto y el dominio del pooler, y siempre verifica el certificado y el nombre del servidor TLS. Un `sslmode=require` o `sslmode=verify-full` del panel se procesa manteniendo esa verificación. Si Supabase renueva el certificado o tu proyecto requiere otra CA, descarga la correspondiente desde **Database settings → SSL Configuration** y cambia `DATABASE_SSL_CA_FILE` a su ruta local. Si esta variable está vacía se usa la confianza del sistema, que puede no reconocer la CA de Supabase. No uses `rejectUnauthorized=false` ni `NODE_TLS_REJECT_UNAUTHORIZED=0`. [TLS de Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres#ssl), [TLS de node-postgres](https://node-postgres.com/features/ssl).
+
+4. **Antes de crear tablas**, revisa **Integrations → Data API** en el panel. Si el proyecto no necesita esa API, puedes desactivarla tras comprobar que ninguna otra aplicación depende de ella. Si permanece habilitada, confirma que `constructora_private` no figure en **Exposed schemas**. Solo después de verificarlo cambia `SUPABASE_DATA_API_REVIEWED=true` en `.env`. El esquema privado limita los permisos de los roles de la Data API y no añade políticas públicas. Este indicador registra tu revisión; no modifica ni sustituye la configuración del panel. [Seguridad de la Data API](https://supabase.com/docs/guides/api/securing-your-api).
+
+5. Instala dependencias e inspecciona la base con una conexión real de solo lectura:
+
+   ```powershell
+   npm.cmd ci
+   npm.cmd run db:inspect
+   ```
+
+   Revisa las tablas, sus cantidades de filas y permisos antes de continuar. El comando requiere `DATABASE_URL` y no recurre a PGlite. Si detecta tablas de esta aplicación fuera de `constructora_private`, detente para revisar cómo conservar y proteger esos datos; no borres ni muevas tablas para resolverlo. La inicialización rechaza ese caso.
+
+6. Si el inventario confirma que no existen tablas de la aplicación, inicializa:
+
+   ```powershell
+   npm.cmd run db:init
+   ```
+
+   El esquema del proyecto contiene `maquinaria`, `contrato` y `contrato_maquinaria`. La semilla añade el catálogo de ejemplo solo cuando está vacío. Para crear únicamente el esquema, sin esos datos, usa `npm.cmd run db:init -- --schema-only`. Se retiró `db:seed` porque era un alias que también inicializaba y migraba el esquema; los datos de ejemplo se controlan mediante `db:init` y `--schema-only`. Si ya existen tablas en el esquema privado, revisa primero su estructura y datos; únicamente tras esa revisión usa `npm.cmd run db:init -- --existing-reviewed`. La inicialización puede adaptar el esquema y preparar el detalle de contratos históricos. No ejecutes los archivos SQL manualmente contra datos existentes ni autorices operaciones destructivas sin una revisión específica.
+
+7. Comprueba la conexión y las lecturas reales:
+
+   ```powershell
+   npm.cmd run db:verify
+   ```
+
+   La verificación requiere Supabase: comprueba TLS, inicia temporalmente el servidor en la interfaz local y consulta `/api/health` y `/api/maquinaria`. Revisa su resultado antes de dar la conexión por terminada. `npm.cmd test` comprueba el comportamiento con PGlite y no demuestra una conexión a Supabase.
+
+8. Inicia la aplicación con `.env` ya configurado:
+
+   ```powershell
+   npm.cmd start
+   ```
+
+   Abre `http://127.0.0.1:3000`. Los comandos cargan `.env` automáticamente; `HOST=127.0.0.1` mantiene el servidor accesible desde esta computadora. El arranque remoto comprueba el esquema sin crear tablas ni cargar semillas. Una variable `DATABASE_URL` ya definida en el entorno de la terminal tiene prioridad sobre `.env`; evita configuraciones antiguas sin imprimir su contenido.
 
 ## Selección y contratos
 
@@ -30,7 +86,7 @@ Abrir `http://localhost:3000`. En desarrollo, sin `DATABASE_URL`, se usa Postgre
 - Todas las máquinas de un contrato comparten cliente, ciudad y fechas. Las fechas de la búsqueda se copian al contrato al elegir el primer equipo; agregar otro no cambia ese período.
 - La tarifa diaria del contrato suma las tarifas de las máquinas. El total multiplica esa suma por los días de alquiler, incluyendo inicio y fin.
 - Se genera un solo número de contrato. Antes de guardar se comprueba cada equipo; si alguno no existe, está inhabilitado o ya está ocupado, se rechaza toda la operación y no se crean reservas parciales.
-- Los contratos históricos de una máquina se conservan. Al iniciar se prepara de forma idempotente su detalle en `contrato_maquinaria`, manteniendo los nombres y tarifas pactados.
+- Los contratos históricos de una máquina se conservan. Al inicializar el esquema se prepara de forma idempotente su detalle en `contrato_maquinaria`, manteniendo los nombres y tarifas pactados.
 
 La interfaz envía una lista de identificadores únicos, sin tarifas proporcionadas por el cliente:
 

@@ -1,14 +1,21 @@
-import { createDatabase, initializeDatabase } from './database.mjs';
+import { createDatabase, initializeDatabase, safeDatabaseError } from './database.mjs';
+import { PostgresPreparationError } from './postgres-preparation.mjs';
 
 let database;
 try {
+  const flags = new Set(process.argv.slice(2));
+  if ([...flags].some((flag) => !['--existing-reviewed', '--schema-only'].includes(flag))) {
+    throw new PostgresPreparationError('INVALID_INITIALIZATION_FLAG',
+      'Usa db:init con --existing-reviewed o --schema-only cuando corresponda.');
+  }
   database = await createDatabase();
-  await initializeDatabase(database);
-  console.info(`Esquema y maquinaria inicializados (${database.provider}).`);
-} catch {
-  console.error(process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL
-    ? 'DATABASE_URL es obligatoria en producción. Configura PostgreSQL antes de inicializar el esquema.'
-    : 'No se pudo inicializar la base de datos. Revisa la configuración y la conexión.');
+  const result = await initializeDatabase(database, {
+    existingReviewed: flags.has('--existing-reviewed'), seed: !flags.has('--schema-only'),
+  });
+  if (database.provider === 'postgresql') console.info(JSON.stringify(result, null, 2));
+  else console.info(`Esquema local inicializado (${database.provider}).`);
+} catch (error) {
+  console.error(error instanceof PostgresPreparationError ? error.safeMessage : safeDatabaseError(error));
   process.exitCode = 1;
 } finally {
   await database?.close().catch(() => { process.exitCode = 1; });

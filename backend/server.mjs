@@ -1,5 +1,6 @@
 import { createServer } from './app.mjs';
-import { createDatabase, initializeDatabase } from './database.mjs';
+import { createDatabase, initializeDatabase, safeDatabaseError } from './database.mjs';
+import { assertPostgresReady } from './postgres-preparation.mjs';
 
 const configuredPort = process.env.PORT || process.env.SERVER_PORT || '3000';
 const port = Number(configuredPort);
@@ -12,7 +13,12 @@ if (!Number.isInteger(port) || port < 0 || port > 65_535) {
   let server;
   try {
     database = await createDatabase();
-    await initializeDatabase(database);
+    if (database.provider === 'pglite') {
+      await initializeDatabase(database);
+    } else {
+      await database.verifyConnection();
+      await assertPostgresReady(database);
+    }
     server = createServer({ database });
     await new Promise((resolve, reject) => {
       server.once('error', reject);
@@ -36,10 +42,10 @@ if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     }
     process.once('SIGTERM', shutdown);
     process.once('SIGINT', shutdown);
-  } catch {
+  } catch (error) {
     console.error(process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL
       ? 'DATABASE_URL es obligatoria en producción. Configura PostgreSQL antes de iniciar el servicio.'
-      : 'No se pudo iniciar el servidor. Revisa la configuración y la conexión de base de datos.');
+      : `No se pudo iniciar el servidor. ${safeDatabaseError(error)}`);
     if (server?.listening) await new Promise((resolve) => server.close(resolve));
     await database?.close().catch(() => {});
     process.exitCode = 1;

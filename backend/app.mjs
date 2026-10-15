@@ -134,7 +134,7 @@ export async function findMachinery(database, filters) {
     )`);
   }
   const { rows } = await database.query(
-    `SELECT m.id, m.nombre, m.tipo, m.descripcion, m.tarifa_diaria, m.disponible, m.ubicacion
+    `SELECT m.id, m.nombre, m.tipo, m.descripcion, m.tarifa_diaria, m.disponible, m.ubicacion, m.horometro, m.ficha_tecnica, m.foto_url
      FROM maquinaria m ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY m.id`,
     values,
   );

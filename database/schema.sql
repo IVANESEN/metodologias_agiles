@@ -72,3 +72,14 @@ ALTER TABLE contrato ADD COLUMN IF NOT EXISTS condiciones_especiales TEXT
 -- HU7: firma simulada persistente. Los contratos anteriores siguen sin firma.
 ALTER TABLE contrato ADD COLUMN IF NOT EXISTS firma JSONB;
 ALTER TABLE contrato ADD COLUMN IF NOT EXISTS firmado_en TIMESTAMPTZ;
+
+-- Sprint 2 HU5: ficha técnica de maquinaria
+ALTER TABLE maquinaria
+ADD COLUMN IF NOT EXISTS horometro INTEGER
+CHECK (horometro >= 0);
+
+ALTER TABLE maquinaria
+ADD COLUMN IF NOT EXISTS ficha_tecnica TEXT;
+
+ALTER TABLE maquinaria
+ADD COLUMN IF NOT EXISTS foto_url TEXT;

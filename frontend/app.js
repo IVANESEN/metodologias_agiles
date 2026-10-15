@@ -262,6 +262,33 @@ function renderEquipment() {
     top.append(icon, element('span', 'availability', item.disponible ? 'Disponible' : 'No disponible'));
     card.append(top, element('p', 'equipment-type', item.tipo), element('h3', '', item.nombre), element('p', 'equipment-description', item.descripcion));
     card.append(element('p', 'equipment-location', item.ubicacion ? `Última ciudad: ${item.ubicacion}` : 'Ciudad por definir'));
+    // Sprint 2 HU5: ficha técnica de maquinaria
+    const ficha = element('details', 'equipment-technical-sheet');
+    const tituloFicha = element('summary', '', 'Ver ficha técnica');
+
+    const contenidoFicha = element('div', 'technical-sheet-content');
+
+    contenidoFicha.append(
+      element('p', '', `Horómetro: ${Number.isInteger(item.horometro) && item.horometro >= 0 ? item.horometro + ' horas' : 'No disponible'}`),
+      element('p', '', `Ficha técnica: ${item.ficha_tecnica || 'No disponible'}`)
+    );
+
+    if (item.foto_url) {
+      const foto = document.createElement('img');
+      foto.src = item.foto_url;
+      foto.alt = `Fotografía de ${item.nombre}`;
+      foto.loading = 'lazy';
+      foto.addEventListener('error', () => {
+        foto.replaceWith(element('p', '', 'Fotografía no disponible'));
+      });
+      contenidoFicha.append(foto);
+    } else {
+      contenidoFicha.append(element('p', '', 'Fotografía no disponible'));
+    }
+
+    ficha.append(tituloFicha, contenidoFicha);
+    card.append(ficha);
+
     const bottom = element('div', 'equipment-bottom');
     const price = element('div', 'equipment-price');
     price.append(element('strong', '', money.format(item.tarifa_diaria)), element('span', '', '/ día'));

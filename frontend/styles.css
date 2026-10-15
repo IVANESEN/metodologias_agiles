@@ -263,3 +263,30 @@ fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
 .signature-actions { display: flex; align-items: stretch; gap: 12px; margin-top: 12px; }
 .signature-actions button { min-height: 44px; }
 .signature-actions .primary-button { flex: 1; width: auto; justify-content: center; }
+
+/* Sprint 2 - HU5: Ficha tecnica */
+.equipment-technical-sheet {
+  margin: 15px 0;
+  padding: 12px;
+  border: 1px solid #d8e0e8;
+  border-radius: 10px;
+}
+
+.equipment-technical-sheet summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 5px;
+}
+
+.technical-sheet-content {
+  padding-top: 12px;
+  line-height: 1.6;
+}
+
+.technical-sheet-content img {
+  width: 100%;
+  max-height: 230px;
+  object-fit: contain;
+  border-radius: 8px;
+  margin-top: 10px;
+}

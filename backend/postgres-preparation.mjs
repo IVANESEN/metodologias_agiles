@@ -1,4 +1,4 @@
-const APP_TABLES = ['maquinaria', 'contrato', 'contrato_maquinaria'];
+const APP_TABLES = ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago'];
 const API_ROLES = ['anon', 'authenticated', 'service_role'];
 const INTERNAL_SCHEMAS = new Set(['auth', 'storage', 'realtime', '_realtime', 'extensions',
   'supabase_functions', 'supabase_migrations', 'vault', 'graphql', 'graphql_public',
@@ -13,6 +13,8 @@ const LEGACY_COLUMNS = {
     creado_en: 'timestamp with time zone' },
   contrato_maquinaria: { contrato_id: 'uuid', maquinaria_id: 'integer',
     maquinaria_nombre: 'character varying(120)', tarifa_diaria: 'numeric(12,2)' },
+  pago: { id: 'uuid', contrato_id: 'uuid', monto: 'numeric(14,2)',
+    creado_en: 'timestamp with time zone' },
 };
 const CURRENT_COLUMNS = {
   maquinaria: { ...LEGACY_COLUMNS.maquinaria, ubicacion: 'character varying(100)' },
@@ -21,6 +23,7 @@ const CURRENT_COLUMNS = {
     seguro: 'character varying(30)', forma_pago: 'character varying(30)',
     condiciones_especiales: 'text', firma: 'jsonb', firmado_en: 'timestamp with time zone' },
   contrato_maquinaria: LEGACY_COLUMNS.contrato_maquinaria,
+  pago: LEGACY_COLUMNS.pago,
 };
 
 export class PostgresPreparationError extends Error {
@@ -61,9 +64,11 @@ export async function inspectPostgresDatabase(database) {
       ORDER BY n.nspname, c.relname`, [API_ROLES]);
     const { rows: columns } = await database.query(`/* app-columns */
       SELECT n.nspname AS schema, c.relname AS table, a.attname AS name,
-        format_type(a.atttypid, a.atttypmod) AS type, a.attnotnull AS "notNull"
+        format_type(a.atttypid, a.atttypmod) AS type, a.attnotnull AS "notNull",
+        pg_get_expr(d.adbin, d.adrelid) AS "defaultValue"
       FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
       JOIN pg_namespace n ON n.oid = c.relnamespace
+      LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
       WHERE c.relname = ANY($1::text[]) AND c.relkind IN ('r','p') AND a.attnum > 0
         AND NOT a.attisdropped AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
       ORDER BY n.nspname, c.relname, a.attnum`, [APP_TABLES]);
@@ -72,7 +77,8 @@ export async function inspectPostgresDatabase(database) {
         cmd AS command, roles::text[] AS roles FROM pg_policies WHERE tablename = ANY($1::text[])`, [APP_TABLES]);
     const { rows: constraints } = await database.query(`/* app-constraints */
       SELECT n.nspname AS schema, c.relname AS table, con.conname AS name, con.contype AS type,
-        con.convalidated AS validated, pg_get_constraintdef(con.oid, true) AS definition,
+        con.convalidated AS validated, con.confdeltype AS "onDelete",
+        pg_get_constraintdef(con.oid, true) AS definition,
         ARRAY(SELECT a.attname::text FROM unnest(con.conkey) WITH ORDINALITY k(attnum, position)
           JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum ORDER BY k.position) AS columns,
         rn.nspname AS "referenceSchema", rc.relname AS "referenceTable",
@@ -149,7 +155,7 @@ export async function inspectPostgresDatabase(database) {
       const result = await database.query(`/* app-row-count */ SELECT COUNT(*)::text AS count FROM
         ${quoteIdentifier(relation.schema)}.${quoteIdentifier(relation.name)}`);
       appTables.push({ ...relation, rowCount: safeCount(result.rows[0].count),
-        columns: columns.filter(matches).map(({ name, type, notNull }) => ({ name, type, notNull })),
+        columns: columns.filter(matches).map(({ name, type, notNull, defaultValue }) => ({ name, type, notNull, defaultValue })),
         constraints: constraints.filter(matches).map(({ schema: ignoredSchema, table: ignoredTable, ...constraint }) => constraint),
         policies: policies.filter(matches).map(({ name, command, roles }) => ({ name, command,
           roles: [...new Set(roles.map((role) => roleCategory(role === 'public' ? 'PUBLIC' : role)))] })),
@@ -216,13 +222,31 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
     const hasPrimaryKey = table.constraints.some((constraint) => constraint.type === 'p' &&
       sameColumns(constraint.columns, primaryKey));
     const foreignKeys = table.name === 'maquinaria' ? [] : table.name === 'contrato'
-      ? [['maquinaria_id', 'maquinaria']] : [['maquinaria_id', 'maquinaria'], ['contrato_id', 'contrato']];
+      ? [['maquinaria_id', 'maquinaria']] : table.name === 'pago' ? [['contrato_id', 'contrato']]
+        : [['maquinaria_id', 'maquinaria'], ['contrato_id', 'contrato']];
     const hasForeignKeys = foreignKeys.every(([column, referenceTable]) => table.constraints.some((constraint) =>
       constraint.type === 'f' && constraint.validated && sameColumns(constraint.columns, [column]) &&
       constraint.referenceSchema === schema && constraint.referenceTable === referenceTable &&
       sameColumns(constraint.referenceColumns, ['id'])));
     if (!hasPrimaryKey || !hasForeignKeys) {
       fail('INCOMPATIBLE_EXISTING_TABLES', 'Faltan claves primarias o relaciones esperadas en las tablas existentes. Revisa el esquema antes de continuar.');
+    }
+    if (table.name === 'pago') {
+      const normalizeExpression = (definition) => (definition || '').replace(/[\s()]/g, '').toLowerCase();
+      const requiredNotNull = Object.keys(LEGACY_COLUMNS.pago).every((name) =>
+        table.columns.some((column) => column.name === name && column.notNull));
+      const positiveAmount = table.constraints.some((constraint) => constraint.type === 'c' &&
+        constraint.validated && sameColumns(constraint.columns, ['monto']) &&
+        /^checkmonto>0(?:::numeric)?$/.test(normalizeExpression(constraint.definition)));
+      const restrictedContract = table.constraints.some((constraint) => constraint.type === 'f' &&
+        constraint.validated && sameColumns(constraint.columns, ['contrato_id']) &&
+        constraint.referenceSchema === schema && constraint.referenceTable === 'contrato' &&
+        sameColumns(constraint.referenceColumns, ['id']) && constraint.onDelete === 'r');
+      const createdTimestamp = table.columns.some((column) => column.name === 'creado_en' &&
+        normalizeExpression(column.defaultValue) === 'current_timestamp');
+      if (!requiredNotNull || !positiveAmount || !restrictedContract || !createdTimestamp) {
+        fail('INCOMPATIBLE_EXISTING_TABLES', 'Las restricciones de pagos no coinciden con las esperadas. Revisa importes positivos, datos obligatorios, fechas y relaciones antes de continuar.');
+      }
     }
     if (current && !table.rlsEnabled) {
       fail('DATABASE_PRIVACY_NOT_READY', 'Falta proteger las tablas del backend. Revisa la base e inicializa de forma explícita.');

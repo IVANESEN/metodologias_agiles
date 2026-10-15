@@ -341,7 +341,13 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
       if (path === '/api/health' && request.method === 'GET') {
         try { await database.query('SELECT 1 AS healthy'); }
         catch { throw new ApiError(503, 'DATABASE_UNAVAILABLE', 'La base de datos no está disponible.'); }
-        return json(response, 200, { status: 'ok', database: database.provider || 'postgresql' });
+        // Render define RENDER_GIT_COMMIT; permite comprobar qué commit está publicado.
+        const commit = process.env.RENDER_GIT_COMMIT;
+        return json(response, 200, {
+          status: 'ok',
+          database: database.provider || 'postgresql',
+          ...(commit ? { commit } : {}),
+        });
       }
       if (path === '/api/maquinaria' && request.method === 'GET') {
         const filters = validateMachineryFilters(url.searchParams);

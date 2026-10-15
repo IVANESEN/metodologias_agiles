@@ -8,7 +8,9 @@ services:
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /api/health
-    autoDeployTrigger: checksPass
+    # El despliegue lo ejecuta el job `deploy` de .github/workflows/pipeline.yml
+    # (solo tras build y pruebas en verde). Evita despliegues duplicados.
+    autoDeployTrigger: 'off'
     envVars:
       - key: NODE_VERSION
         value: 24.19.0

@@ -60,6 +60,17 @@ test('API de alquiler con PostgreSQL embebido y persistencia real', async (t) =>
     const health = await request('/api/health');
     assert.equal(health.response.status, 200);
     assert.deepEqual(health.body, { status: 'ok', database: 'pglite' });
+    const previousCommit = process.env.RENDER_GIT_COMMIT;
+    process.env.RENDER_GIT_COMMIT = '0123456789abcdef0123456789abcdef01234567';
+    try {
+      const versioned = await request('/api/health');
+      assert.deepEqual(versioned.body, {
+        status: 'ok', database: 'pglite', commit: '0123456789abcdef0123456789abcdef01234567',
+      });
+    } finally {
+      if (previousCommit === undefined) delete process.env.RENDER_GIT_COMMIT;
+      else process.env.RENDER_GIT_COMMIT = previousCommit;
+    }
     const catalog = await request('/api/maquinaria');
     assert.equal(catalog.response.status, 200);
     assert.equal(catalog.body.length, 2);

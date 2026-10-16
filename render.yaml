@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: constructora-el-salvador
+    name: metodologias-agiles-ci
     runtime: node
     plan: free
     region: oregon
@@ -13,18 +13,17 @@ services:
     autoDeployTrigger: 'off'
     envVars:
       - key: NODE_VERSION
-        value: 24.19.0
+        value: 24.21.0
       - key: NODE_ENV
         value: production
+      - key: HOST
+        value: 0.0.0.0
       - key: DATABASE_URL
-        fromDatabase:
-          name: constructora-el-salvador-db
-          property: connectionString
-
-databases:
-  - name: constructora-el-salvador-db
-    plan: free
-    region: oregon
-    databaseName: constructora_el_salvador_db
-    user: constructora_el_salvador_db_user
-    ipAllowList: []
+        # URI privada de la base Supabase actual, introducida en Render.
+        sync: false
+      - key: SUPABASE_PROJECT_REF
+        value: hqhkpuaxnisfxicvjsmn
+      - key: DATABASE_SCHEMA
+        value: constructora_private
+      - key: DATABASE_SSL_CA_FILE
+        value: database/certs/supabase-prod-ca-2021.crt

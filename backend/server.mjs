@@ -19,7 +19,7 @@ if (!Number.isInteger(port) || port < 0 || port > 65_535) {
       await database.verifyConnection();
       await assertPostgresReady(database);
     }
-    server = createServer({ database });
+    server = createServer({ database, requireAuth: true });
     await new Promise((resolve, reject) => {
       server.once('error', reject);
       server.listen(port, host, resolve);

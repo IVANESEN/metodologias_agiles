@@ -7,6 +7,8 @@ import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mj
 import { buildContractPdf } from './contrato-pdf.mjs';
 import { hoyElSalvador, validarDias, buscarPorVencer } from './contratos-por-vencer.mjs';
 import { normalizeSignature } from '../frontend/firma-datos.mjs';
+import { AuthError, handleAuthRoutes, guardSession, checkRequestOrigin } from './auth.mjs';
+import { handleRecoveryRoutes } from './recuperacion.mjs';
 
 const defaultFrontendDir = fileURLToPath(new URL('../frontend/', import.meta.url));
 const MAX_BODY_BYTES = 16_384;
@@ -399,7 +401,7 @@ async function serveFile(request, response, pathname, frontendDir) {
     const body = await readFile(path);
     response.writeHead(200, {
       'Content-Type': MIME[extname(path)] || 'application/octet-stream',
-      'Content-Length': body.length, 'Cache-Control': 'no-cache',
+      'Content-Length': body.length, 'Cache-Control': response.getHeader('Cache-Control') || 'no-cache',
     });
     response.end(request.method === 'HEAD' ? undefined : body);
   } catch (error) {
@@ -410,7 +412,9 @@ async function serveFile(request, response, pathname, frontendDir) {
   }
 }
 
-export function createServer({ database, frontendDir = defaultFrontendDir, logger = console } = {}) {
+export function createServer({ database, frontendDir = defaultFrontendDir, logger = console,
+  requireAuth = false, mailer, appUrl = process.env.APP_URL,
+  secureCookies = process.env.NODE_ENV === 'production' } = {}) {
   if (!database) throw new TypeError('createServer requires a database adapter.');
   const server = createHttpServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -419,6 +423,12 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
     try {
       const url = new URL(request.url, 'http://localhost');
       const path = url.pathname;
+      // HU1: autenticación. Las pruebas existentes pueden usar el servidor sin guardia.
+      const authContext = { request, response, path, database, json, readJson, mailer, appUrl, secureCookies };
+      if (requireAuth || path.startsWith('/api/auth/')) checkRequestOrigin(request, { secureCookies, appUrl });
+      if (await handleAuthRoutes(authContext)) return;
+      if (await handleRecoveryRoutes(authContext)) return;
+      if (requireAuth && await guardSession(authContext)) return;
       if (path === '/api/health' && request.method === 'GET') {
         try { await database.query('SELECT 1 AS healthy'); }
         catch { throw new ApiError(503, 'DATABASE_UNAVAILABLE', 'La base de datos no está disponible.'); }
@@ -523,7 +533,7 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
       await serveFile(request, response, path, frontendDir);
     } catch (error) {
       if (response.headersSent || response.destroyed) return;
-      if (error instanceof ApiError) {
+      if (error instanceof ApiError || error instanceof AuthError) {
         return json(response, error.status, {
           error: { code: error.code, message: error.message, ...(error.fields ? { fields: error.fields } : {}) },
         });

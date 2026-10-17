@@ -1,4 +1,4 @@
-const APP_TABLES = ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago'];
+const APP_TABLES = ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion'];
 const API_ROLES = ['anon', 'authenticated', 'service_role'];
 const INTERNAL_SCHEMAS = new Set(['auth', 'storage', 'realtime', '_realtime', 'extensions',
   'supabase_functions', 'supabase_migrations', 'vault', 'graphql', 'graphql_public',
@@ -24,6 +24,10 @@ const CURRENT_COLUMNS = {
     condiciones_especiales: 'text', firma: 'jsonb', firmado_en: 'timestamp with time zone' },
   contrato_maquinaria: LEGACY_COLUMNS.contrato_maquinaria,
   pago: LEGACY_COLUMNS.pago,
+  usuario: { id: 'uuid', correo: 'character varying(254)', nombre: 'character varying(160)', clave_hash: 'text',
+    rol: 'character varying(20)', activo: 'boolean', creado_en: 'timestamp with time zone' },
+  sesion: { id: 'uuid', usuario_id: 'uuid', token_hash: 'text', expira_en: 'timestamp with time zone',
+    creado_en: 'timestamp with time zone' },
 };
 
 export class PostgresPreparationError extends Error {
@@ -209,7 +213,7 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         table.grants.some(({ grantee }) => grantee !== 'current_role')) {
       fail('UNSAFE_EXISTING_DATABASE_ACCESS', 'Las tablas existentes tienen políticas, permisos de Data API o una estructura que requiere revisión manual. No se modificaron.');
     }
-    const required = (current ? CURRENT_COLUMNS : LEGACY_COLUMNS)[table.name];
+    const required = current ? CURRENT_COLUMNS[table.name] : LEGACY_COLUMNS[table.name] || CURRENT_COLUMNS[table.name];
     const compatible = Object.entries(required).every(([name, type]) =>
       table.columns.some((column) => column.name === name && column.type.replaceAll(' ', '') === type.replaceAll(' ', '')));
     if (!compatible) {
@@ -221,7 +225,8 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
     const primaryKey = table.name === 'contrato_maquinaria' ? ['contrato_id', 'maquinaria_id'] : ['id'];
     const hasPrimaryKey = table.constraints.some((constraint) => constraint.type === 'p' &&
       sameColumns(constraint.columns, primaryKey));
-    const foreignKeys = table.name === 'maquinaria' ? [] : table.name === 'contrato'
+    const foreignKeys = ['maquinaria', 'usuario'].includes(table.name) ? [] : table.name === 'sesion'
+      ? [['usuario_id', 'usuario']] : table.name === 'contrato'
       ? [['maquinaria_id', 'maquinaria']] : table.name === 'pago' ? [['contrato_id', 'contrato']]
         : [['maquinaria_id', 'maquinaria'], ['contrato_id', 'contrato']];
     const hasForeignKeys = foreignKeys.every(([column, referenceTable]) => table.constraints.some((constraint) =>
@@ -230,6 +235,17 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
       sameColumns(constraint.referenceColumns, ['id'])));
     if (!hasPrimaryKey || !hasForeignKeys) {
       fail('INCOMPATIBLE_EXISTING_TABLES', 'Faltan claves primarias o relaciones esperadas en las tablas existentes. Revisa el esquema antes de continuar.');
+    }
+    if (['usuario', 'sesion'].includes(table.name)) {
+      const uniqueColumn = table.name === 'usuario' ? 'correo' : 'token_hash';
+      const notNull = Object.keys(CURRENT_COLUMNS[table.name]).every(name =>
+        table.columns.some(column => column.name === name && column.notNull));
+      const unique = table.constraints.some(constraint => constraint.type === 'u' &&
+        sameColumns(constraint.columns, [uniqueColumn]));
+      const cascade = table.name === 'usuario' || table.constraints.some(constraint =>
+        constraint.type === 'f' && sameColumns(constraint.columns, ['usuario_id']) && constraint.onDelete === 'c');
+      if (!notNull || !unique || !cascade) fail('INCOMPATIBLE_EXISTING_TABLES',
+        'Las tablas de autenticación requieren datos obligatorios, identificadores únicos y relaciones protegidas.');
     }
     if (table.name === 'pago') {
       const normalizeExpression = (definition) => (definition || '').replace(/[\s()]/g, '').toLowerCase();

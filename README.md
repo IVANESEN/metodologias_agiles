@@ -26,7 +26,7 @@ Abrir `http://localhost:3000`. En desarrollo, sin `DATABASE_URL`, se usa Postgre
 
 ## Conexión local a Supabase
 
-El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añadir el SDK de Supabase. Esta guía prepara únicamente la ejecución local con el proyecto **Constructora_ElSalvador**, referencia `hqhkpuaxnisfxicvjsmn`.
+El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añadir el SDK de Supabase. Esta guía prepara la ejecución local con el proyecto de Supabase elegido. Para este despliegue se creó **constructora-averguers-ci**, dentro de **Metodologías Ágiles - Averguers**; copia su referencia desde el panel.
 
 1. En el panel de Supabase, abre ese proyecto y selecciona **Connect → Session pooler → URI**. Copia personalmente la cadena PostgreSQL del panel; conserva exactamente su host, puerto, usuario y base. La URL HTTPS del proyecto no es una cadena PostgreSQL. La región no permite deducir el host del pooler. [Guía oficial de conexión](https://supabase.com/docs/guides/database/connecting-to-postgres).
 
@@ -40,7 +40,7 @@ El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añ
 
    Codifica únicamente la contraseña para la URI: `@` → `%40`, `:` → `%3A`, `/` → `%2F`, `?` → `%3F`, `#` → `%23`, `%` → `%25`, `+` → `%2B`, `&` → `%26` y espacio → `%20`. No codifiques toda la cadena ni vuelvas a codificar una contraseña que ya lo esté. Realiza la conversión localmente, sin enviar el secreto a sitios web.
 
-3. Conserva `SUPABASE_PROJECT_REF=hqhkpuaxnisfxicvjsmn`, `DATABASE_SCHEMA=constructora_private` y `DATABASE_SSL_CA_FILE=database/certs/supabase-prod-ca-2021.crt`, como indica `.env.example`. El repositorio incluye ese certificado raíz público de Supabase; no contiene credenciales. Su procedencia es la propiedad `ssl:certificate_url` del [código oficial de Supabase Studio](https://github.com/supabase/supabase/blob/master/apps/studio/hooks/custom-content/custom-content.json), que apunta a esta [descarga HTTPS del certificado de producción](https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt).
+3. Sustituye `SUPABASE_PROJECT_REF` por la referencia del mismo proyecto de la URI. Conserva `DATABASE_SCHEMA=constructora_private` y `DATABASE_SSL_CA_FILE=database/certs/supabase-prod-ca-2021.crt`, como indica `.env.example`. El repositorio incluye ese certificado raíz público de Supabase; no contiene credenciales. Su procedencia es la propiedad `ssl:certificate_url` del [código oficial de Supabase Studio](https://github.com/supabase/supabase/blob/master/apps/studio/hooks/custom-content/custom-content.json), que apunta a esta [descarga HTTPS del certificado de producción](https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt).
 
    El cliente valida el proyecto y el dominio del pooler, y siempre verifica el certificado y el nombre del servidor TLS. Un `sslmode=require` o `sslmode=verify-full` del panel se procesa manteniendo esa verificación. Si Supabase renueva el certificado o tu proyecto requiere otra CA, descarga la correspondiente desde **Database settings → SSL Configuration** y cambia `DATABASE_SSL_CA_FILE` a su ruta local. Si esta variable está vacía se usa la confianza del sistema, que puede no reconocer la CA de Supabase. No uses `rejectUnauthorized=false` ni `NODE_TLS_REJECT_UNAUTHORIZED=0`. [TLS de Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres#ssl), [TLS de node-postgres](https://node-postgres.com/features/ssl).
 
@@ -61,7 +61,7 @@ El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añ
    npm.cmd run db:init
    ```
 
-   El esquema del proyecto contiene `maquinaria`, `contrato` y `contrato_maquinaria`. La semilla añade el catálogo de ejemplo solo cuando está vacío. Para crear únicamente el esquema, sin esos datos, usa `npm.cmd run db:init -- --schema-only`. Se retiró `db:seed` porque era un alias que también inicializaba y migraba el esquema; los datos de ejemplo se controlan mediante `db:init` y `--schema-only`. Si ya existen tablas en el esquema privado, revisa primero su estructura y datos; únicamente tras esa revisión usa `npm.cmd run db:init -- --existing-reviewed`. La inicialización puede adaptar el esquema y preparar el detalle de contratos históricos. No ejecutes los archivos SQL manualmente contra datos existentes ni autorices operaciones destructivas sin una revisión específica.
+   El esquema del proyecto contiene `maquinaria`, `contrato`, `contrato_maquinaria` y `pago`. La semilla añade el catálogo de ejemplo solo cuando está vacío. Para crear únicamente el esquema, sin esos datos, usa `npm.cmd run db:init -- --schema-only`. Se retiró `db:seed` porque era un alias que también inicializaba y migraba el esquema; los datos de ejemplo se controlan mediante `db:init` y `--schema-only`. Si ya existen tablas en el esquema privado, revisa primero su estructura y datos; únicamente tras esa revisión usa `npm.cmd run db:init -- --existing-reviewed`. La inicialización puede adaptar el esquema y preparar el detalle de contratos históricos. No ejecutes los archivos SQL manualmente contra datos existentes ni autorices operaciones destructivas sin una revisión específica.
 
 7. Comprueba la conexión y las lecturas reales:
 
@@ -164,3 +164,48 @@ Usar una base de pruebas y un período libre para todos los equipos.
 | Cambiar ciudad, cliente o fechas y luego quitar un equipo | Se conservan los datos escritos y se recalcula el total. |
 
 La revisión debe realizarla una persona distinta del autor (la estrategia del equipo propone a Mariela). Registrar caso, resultado esperado, resultado obtenido, responsable, fecha y evidencia. Para cerrar la historia también se requiere aceptación del Product Owner y verificación en el ambiente compartido.
+
+## Cobros y registro de pagos
+
+La sección **Cobros** muestra el número completo del contrato, cliente, período, total, pagos registrados y saldo pendiente. **Registrar pago** admite abonos parciales y liquidaciones. Tras confirmar el guardado, el saldo se actualiza automáticamente; al liquidar, el contrato desaparece del listado y se muestra **No hay contratos con pagos pendientes** cuando corresponde. Si falla una solicitud, se conservan el listado, los saldos y el importe escrito y se muestra el error. **Actualizar cobros** permite volver a consultar los datos del servidor.
+
+El estado operativo `estado: CONFIRMADO` sigue indicando la reserva de maquinaria. El estado de pago se calcula por separado: `saldo_pendiente = total - SUM(pago.monto)` y `estado_pago` es `PENDIENTE` mientras ese saldo sea mayor que cero; al quedar en cero pasa a `PAGADO`. La forma de pago pactada (incluido crédito) no demuestra que se haya recibido dinero. Los importes se guardan como `NUMERIC` y se calculan en PostgreSQL; no se almacenan copias del saldo o del estado de pago que puedan desincronizarse.
+
+Cada contrato nuevo comienza pendiente por su total. Los contratos históricos conservan sus datos y, al no existir registros previos de pagos en este proyecto, también figuran pendientes hasta registrar los pagos efectivamente recibidos. La migración no inventa abonos ni da por pagados contratos por su estado operativo. El proyecto no dispone de autenticación, roles de aplicación ni sincronización entre sesiones: estos endpoints siguen el acceso existente; la preparación PostgreSQL mantiene la tabla de pagos en el esquema privado, con RLS y sin permisos para los roles de la Data API.
+
+- `GET /api/cobros`: devuelve solo contratos con saldo positivo, filtrados en SQL. Una consulta sin pendientes devuelve `[]`.
+- `GET /api/contratos/:id` y la creación de contratos incluyen `total_pagado`, `saldo_pendiente` y `estado_pago`.
+- `POST /api/contratos/:id/pagos`: recibe `monto` como número o cadena decimal, mayor que cero, con hasta dos decimales y sin superar el saldo actual. Devuelve `{ pago, contrato }` con el estado de cuenta confirmado.
+
+Ejemplo del cuerpo de un pago (sustituir el UUID por uno nuevo para cada pago distinto):
+
+```json
+{ "id": "00112233-4455-4677-8899-aabbccddeeff", "monto": "100.50" }
+```
+
+`id` es opcional para clientes de la API; la interfaz siempre lo envía y lo conserva al reintentar el mismo importe tras un fallo. Una creación devuelve HTTP 201; repetir el mismo identificador, contrato e importe devuelve HTTP 200 sin duplicar el abono. Reutilizarlo para otro pago o superar el saldo devuelve HTTP 409. Los importes o identificadores inválidos devuelven HTTP 400. El servidor bloquea el contrato durante la transacción para impedir sobrepagos simultáneos; un error revierte el registro completo.
+
+### Preparar la base existente
+
+PGlite aplica `database/schema.sql` automáticamente al iniciar. No se necesita configuración nueva. Para PostgreSQL/Supabase, desde esta versión y **antes de publicar en main**, preparar explícitamente la base con el código actualizado; el arranque remoto no ejecuta migraciones. El push a `main` activa el despliegue a Render descrito en [DESPLIEGUE.md](DESPLIEGUE.md).
+
+1. Conservar la conexión del entorno objetivo en `.env` y verificar en el panel que el esquema privado no esté expuesto, según la guía anterior. No modificar credenciales ni desactivar TLS.
+2. Ejecutar `npm.cmd run db:inspect` y revisar estructura, permisos y cantidades de filas. Deben conservarse los contratos y equipos existentes; si aparece una tabla `pago` incompatible u objetos en otro esquema, resolver esa revisión antes de continuar.
+3. Después de esa revisión, ejecutar `npm.cmd run db:init -- --existing-reviewed --schema-only`. La migración añade `pago` y su índice, aplica la protección existente y no carga semillas ni pagos. Es idempotente. Para una base nueva y vacía, usar `npm.cmd run db:init -- --schema-only`.
+4. Ejecutar `npm.cmd run db:verify` y después `npm.cmd start`. La comprobación de arranque exige la nueva tabla y sus restricciones. La versión anterior sigue siendo compatible con la tabla adicional durante la transición.
+
+### Validar cobros
+
+Ejecutar `npm.cmd test`. Las pruebas usan bases PGlite temporales, sin leer `.env` ni alterar la base configurada. Cubren filtrado en SQL, pagos parciales/completos, actualización del controlador de interfaz sin recarga, errores y reversión, persistencia al reabrir, precisión decimal, concurrencia e idempotencia.
+
+Para revisión manual, iniciar la aplicación contra una base de pruebas y abrir `http://127.0.0.1:3000/#cobros`:
+
+| Caso | Resultado esperado |
+| --- | --- |
+| Crear un contrato con período libre | Aparece en Cobros, con cliente, número y saldo igual al total. |
+| Registrar un monto menor que su saldo | Permanece visible con el saldo reducido, sin recargar. |
+| Registrar exactamente el saldo restante | Se retira del listado y el detalle del contrato devuelve `PAGADO`, manteniendo `CONFIRMADO`. |
+| Pulsar Actualizar cobros o recargar la página | Se conservan los pagos y los contratos liquidados siguen excluidos. |
+| Intentar cero, un negativo, tres decimales o un monto superior al saldo | Se muestra el error sin cambiar saldo ni estado. |
+| Interrumpir la conexión antes de enviar un pago | Se informa el fallo y se conservan el importe y los datos anteriores; reintentar tras recuperar la conexión. |
+| Liquidar todos los contratos | Se muestra No hay contratos con pagos pendientes. |

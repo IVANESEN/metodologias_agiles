@@ -29,6 +29,7 @@
         <a class="nav-tab" href="#catalogo">Catálogo</a>
         <a class="nav-tab" href="#contrato">Contrato</a>
         <a class="nav-tab" href="#alertas">Alertas</a>
+        <a class="nav-tab" href="#cobros">Cobros</a>
       </nav>
     </header>
 
@@ -140,6 +141,17 @@
           <p class="field-error" id="alertas-dias-error" hidden></p>
         </div>
         <div class="alertas-lista" id="alertas-lista" aria-live="polite" aria-busy="false"></div>
+      </section>
+      <section class="cobros" id="cobros" aria-labelledby="cobros-title">
+        <div class="section-heading">
+          <div><p class="eyebrow">ESTADOS DE CUENTA</p><h2 id="cobros-title">Cobros pendientes</h2></div>
+          <div class="cobros-actions"><span class="catalogue-count" id="cobros-count" role="status" aria-live="polite" aria-atomic="true" hidden></span><button class="retry-button" id="cobros-refresh" type="button">Actualizar</button></div>
+        </div>
+        <p class="cobros-help">Aquí aparecen los contratos que conservan un saldo por pagar. El estado de pago es independiente de la operación del contrato.</p>
+        <p class="form-error" id="cobros-error" role="alert" hidden></p>
+        <p class="cobros-notice" id="cobros-notice" role="status" aria-live="polite" aria-atomic="true" tabindex="-1" hidden></p>
+        <p class="catalogue-status cobros-status" id="cobros-status" role="status" aria-live="polite">Cargando cobros pendientes…</p>
+        <div class="cobros-list" id="cobros-list" aria-busy="true"></div>
       </section>
     </main>
     <footer class="site-footer"><span>Constructora El Salvador</span><span>Maquinaria para construir lo que sigue.</span></footer>

@@ -214,12 +214,92 @@ async function contractWithMachinery(database, row) {
      FROM contrato_maquinaria WHERE contrato_id = $1 ORDER BY maquinaria_id`,
     [row.id, row.dias],
   );
+  const { total_pagado, saldo_pendiente, estado_pago } = await contractAccount(database, row.id);
   return {
     ...row, dias: Number(row.dias), tarifa_diaria: Number(row.tarifa_diaria), total: Number(row.total),
+    total_pagado, saldo_pendiente, estado_pago,
     maquinarias: rows.map((machine) => ({
       ...machine, tarifa_diaria: Number(machine.tarifa_diaria), total: Number(machine.total),
     })),
   };
+}
+
+// Payment status is derived from the ledger, independently of operational estado.
+// PostgreSQL numeric arithmetic keeps the balance exact without duplicate state.
+const ACCOUNT_QUERY = `SELECT c.id, c.cliente, c.total, c.estado,
+  c.fecha_inicio::text, c.fecha_fin::text,
+  COALESCE(SUM(p.monto), 0) AS total_pagado,
+  GREATEST(c.total - COALESCE(SUM(p.monto), 0), 0) AS saldo_pendiente,
+  CASE WHEN c.total > COALESCE(SUM(p.monto), 0) THEN 'PENDIENTE' ELSE 'PAGADO' END AS estado_pago
+  FROM contrato c LEFT JOIN pago p ON p.contrato_id = c.id`;
+
+function accountNumbers(row) {
+  return { ...row, total: Number(row.total), total_pagado: Number(row.total_pagado),
+    saldo_pendiente: Number(row.saldo_pendiente) };
+}
+
+async function contractAccount(database, id) {
+  const { rows } = await database.query(`${ACCOUNT_QUERY} WHERE c.id = $1 GROUP BY c.id`, [id]);
+  return accountNumbers(rows[0]);
+}
+
+export async function findPendingAccounts(database) {
+  const { rows } = await database.query(`${ACCOUNT_QUERY}
+    GROUP BY c.id HAVING c.total > COALESCE(SUM(p.monto), 0) ORDER BY c.creado_en, c.id`);
+  return rows.map(accountNumbers);
+}
+
+export function validatePayment(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos del pago.');
+  }
+  const amount = ['string', 'number'].includes(typeof body.monto) ? String(body.monto).trim() : '';
+  const fields = {};
+  if (!/^\d{1,12}(?:\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) {
+    fields.monto = 'Ingresa un monto mayor que cero, con un máximo de dos decimales y 12 dígitos enteros.';
+  }
+  if (body.id !== undefined && (typeof body.id !== 'string' || !UUID_PATTERN.test(body.id))) {
+    fields.id = 'El identificador del pago no es válido.';
+  }
+  if (Object.keys(fields).length) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos del pago.', fields);
+  }
+  const [whole, decimals = ''] = amount.split('.');
+  return { id: body.id?.toLowerCase() || randomUUID(), monto: `${Number(whole)}.${decimals.padEnd(2, '0')}` };
+}
+
+export async function savePayment(database, contractId, input) {
+  return database.transaction(async (tx) => {
+    // All payments for a contract serialize on its header. At READ COMMITTED the
+    // subsequent aggregate sees the previous writer's commit before accepting.
+    const locked = await tx.query('SELECT id FROM contrato WHERE id = $1 FOR UPDATE', [contractId]);
+    if (!locked.rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
+    const existing = await tx.query(
+      'SELECT id, contrato_id, monto, creado_en::text FROM pago WHERE id = $1', [input.id],
+    );
+    if (existing.rows[0]) {
+      const payment = existing.rows[0];
+      if (payment.contrato_id !== locked.rows[0].id || Number(payment.monto) !== Number(input.monto)) {
+        throw new ApiError(409, 'PAYMENT_ID_CONFLICT', 'El identificador ya pertenece a otro pago.');
+      }
+      return { replayed: true, pago: { ...payment, monto: Number(payment.monto) },
+        contrato: await contractAccount(tx, contractId) };
+    }
+    const account = await contractAccount(tx, contractId);
+    if (Number(input.monto) > account.saldo_pendiente) {
+      throw new ApiError(409, 'PAYMENT_EXCEEDS_BALANCE', 'El pago supera el saldo pendiente del contrato.',
+        { monto: `El saldo pendiente es $${account.saldo_pendiente.toFixed(2)}.` });
+    }
+    const { rows } = await tx.query(
+      `INSERT INTO pago (id, contrato_id, monto) VALUES ($1, $2, $3::numeric)
+       ON CONFLICT (id) DO NOTHING RETURNING id, contrato_id, monto, creado_en::text`,
+      [input.id, contractId, input.monto],
+    );
+    // A concurrent request for another contract may have claimed this UUID.
+    if (!rows[0]) throw new ApiError(409, 'PAYMENT_ID_CONFLICT', 'El identificador ya pertenece a otro pago.');
+    return { replayed: false, pago: { ...rows[0], monto: Number(rows[0].monto) },
+      contrato: await contractAccount(tx, contractId) };
+  });
 }
 
 export async function saveContract(database, input) {
@@ -383,6 +463,17 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         const hoy = hoyElSalvador();
         return json(response, 200, { hoy, dias, contratos: await buscarPorVencer(database, { hoy, dias }) });
       }
+      if (path === '/api/cobros' && request.method === 'GET') {
+        return json(response, 200, await findPendingAccounts(database));
+      }
+      const paymentMatch = /^\/api\/contratos\/([^/]+)\/pagos$/.exec(path);
+      if (paymentMatch) {
+        if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
+        const id = paymentMatch[1];
+        if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
+        const { replayed, ...result } = await savePayment(database, id, validatePayment(await readJson(request)));
+        return json(response, replayed ? 200 : 201, result);
+      }
       const signatureMatch = /^\/api\/contratos\/([^/]+)\/firma$/.exec(path);
       if (signatureMatch) {
         if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
@@ -422,7 +513,7 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         return json(response, 200, await contractWithMachinery(database, rows[0]));
       }
       if (path.startsWith('/api/')) {
-        const known = ['/api/maquinaria', '/api/contratos', '/api/health'].includes(path) || path.startsWith('/api/contratos/');
+        const known = ['/api/maquinaria', '/api/contratos', '/api/cobros', '/api/health'].includes(path) || path.startsWith('/api/contratos/');
         if (known) throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
         throw new ApiError(404, 'NOT_FOUND', 'No se encontró el recurso solicitado.');
       }

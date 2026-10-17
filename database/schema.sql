@@ -72,3 +72,15 @@ ALTER TABLE contrato ADD COLUMN IF NOT EXISTS condiciones_especiales TEXT
 -- HU7: firma simulada persistente. Los contratos anteriores siguen sin firma.
 ALTER TABLE contrato ADD COLUMN IF NOT EXISTS firma JSONB;
 ALTER TABLE contrato ADD COLUMN IF NOT EXISTS firmado_en TIMESTAMPTZ;
+
+-- Cobros: each confirmed payment is recorded once. Balance and payment status
+-- are derived from the contract total and these entries, independently of estado.
+-- Historical contracts receive no invented payments when this table is added.
+CREATE TABLE IF NOT EXISTS pago (
+  id UUID PRIMARY KEY,
+  contrato_id UUID NOT NULL REFERENCES contrato(id) ON DELETE RESTRICT,
+  monto NUMERIC(14, 2) NOT NULL CHECK (monto > 0),
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS pago_contrato_idx ON pago (contrato_id);

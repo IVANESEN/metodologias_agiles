@@ -1,5 +1,6 @@
 'use strict';
 import { createSignaturePanel } from './firma.js';
+import { createCobrosPanel } from './cobros.mjs';
 
 const ui = {
   grid: document.getElementById('equipment-grid'),
@@ -51,6 +52,7 @@ const signaturePanel = createSignaturePanel(readResponse, busy => {
   renderEquipment();
   updateEstimate();
 });
+const cobrosPanel = createCobrosPanel(readResponse);
 const money = new Intl.NumberFormat('es-SV', { style: 'currency', currency: 'USD' });
 const dateDisplay = new Intl.DateTimeFormat('es-SV', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const DAY_MS = 86400000;
@@ -489,6 +491,7 @@ ui.form.addEventListener('submit', async event => {
     }
     showConfirmation(contract);
     state.selected.clear();
+    cobrosPanel.load();
     await loadEquipment();
   } catch (error) {
     const message = error instanceof TypeError ? 'No se recibió la confirmación del servidor. Comprueba tu conexión antes de volver a enviar la solicitud.' : error.message;
@@ -586,6 +589,7 @@ for (const field of [ui.ubicacion, ui.filterInicio, ui.filterFin]) field.addEven
 resetDates();
 updateEstimate();
 loadEquipment();
+cobrosPanel.load();
 
 // El enlace permite recuperar el mismo contrato y su firma desde otro teléfono
 // o después de recargar, sin generar una nueva reserva.

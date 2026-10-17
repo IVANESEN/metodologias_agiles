@@ -1,7 +1,7 @@
 # Despliegue automático a Render con Supabase
 
 El servicio web `metodologias-agiles-ci` pertenece al proyecto nuevo
-**Metodologías Ágiles — CI** de Render y usa la base actual de Supabase.
+**Metodologías Ágiles — CI** de Render y usa el proyecto nuevo **constructora-averguers-ci** de Supabase.
 `render.yaml` define únicamente ese servicio, en el plan gratuito.
 
 ## Flujo de integración continua
@@ -21,7 +21,7 @@ y `pull_request`. Sus etapas corresponden al flujo del equipo:
 
 ## Configuración única
 
-### 1. Servicio nuevo y base Supabase actual
+### 1. Servicio nuevo y proyecto Supabase propio
 
 Crea el servicio web dentro del proyecto **Metodologías Ágiles — CI** y
 conéctalo a `IVANESEN/metodologias_agiles`, rama `main`. La configuración es:
@@ -41,13 +41,15 @@ En **Environment**, configura las variables de `render.yaml`:
 | `NODE_VERSION` | `24.21.0` |
 | `NODE_ENV` | `production` |
 | `HOST` | `0.0.0.0` |
-| `DATABASE_URL` | URI privada de **Connect → Session pooler** de la base Supabase actual, puerto explícito `5432`. |
-| `SUPABASE_PROJECT_REF` | `hqhkpuaxnisfxicvjsmn` |
+| `DATABASE_URL` | URI privada de **Connect → Session pooler** del proyecto Supabase elegido, puerto explícito `5432`. |
+| `SUPABASE_PROJECT_REF` | Referencia del mismo proyecto que figura en `DATABASE_URL`, copiada del panel. |
 | `DATABASE_SCHEMA` | `constructora_private` |
 | `DATABASE_SSL_CA_FILE` | `database/certs/supabase-prod-ca-2021.crt` |
 
-Introduce `DATABASE_URL` únicamente en el entorno privado de Render;
-`sync: false` evita guardar su valor en el Blueprint. Conserva el usuario,
+El proyecto Supabase se crea en la organización **Metodologías Ágiles - Averguers**, con plan gratuito y región Oregon. La Data API y la exposición automática de nuevas tablas están desactivadas; el backend utiliza `pg`. Inicializa las cuatro tablas y el catálogo de ejemplo en `constructora_private`, con RLS y sin permisos para los roles de la Data API, antes de iniciar el servidor.
+
+Introduce `DATABASE_URL` y `SUPABASE_PROJECT_REF` únicamente en el entorno privado de Render;
+`sync: false` permite introducir los valores al configurar el servicio sin fijarlos en el Blueprint. Conserva el usuario,
 host y base del panel de Supabase, y codifica los caracteres especiales de
 la contraseña para la URI. El Session pooler conserva el `search_path` que
 necesita el backend. El certificado raíz público está versionado y TLS

@@ -26,7 +26,7 @@ Abrir `http://localhost:3000`. En desarrollo, sin `DATABASE_URL`, se usa Postgre
 
 ## Conexión local a Supabase
 
-El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añadir el SDK de Supabase. Esta guía prepara únicamente la ejecución local con el proyecto **Constructora_ElSalvador**, referencia `hqhkpuaxnisfxicvjsmn`.
+El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añadir el SDK de Supabase. Esta guía prepara la ejecución local con el proyecto de Supabase elegido. Para este despliegue se creó **constructora-averguers-ci**, dentro de **Metodologías Ágiles - Averguers**; copia su referencia desde el panel.
 
 1. En el panel de Supabase, abre ese proyecto y selecciona **Connect → Session pooler → URI**. Copia personalmente la cadena PostgreSQL del panel; conserva exactamente su host, puerto, usuario y base. La URL HTTPS del proyecto no es una cadena PostgreSQL. La región no permite deducir el host del pooler. [Guía oficial de conexión](https://supabase.com/docs/guides/database/connecting-to-postgres).
 
@@ -40,7 +40,7 @@ El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añ
 
    Codifica únicamente la contraseña para la URI: `@` → `%40`, `:` → `%3A`, `/` → `%2F`, `?` → `%3F`, `#` → `%23`, `%` → `%25`, `+` → `%2B`, `&` → `%26` y espacio → `%20`. No codifiques toda la cadena ni vuelvas a codificar una contraseña que ya lo esté. Realiza la conversión localmente, sin enviar el secreto a sitios web.
 
-3. Conserva `SUPABASE_PROJECT_REF=hqhkpuaxnisfxicvjsmn`, `DATABASE_SCHEMA=constructora_private` y `DATABASE_SSL_CA_FILE=database/certs/supabase-prod-ca-2021.crt`, como indica `.env.example`. El repositorio incluye ese certificado raíz público de Supabase; no contiene credenciales. Su procedencia es la propiedad `ssl:certificate_url` del [código oficial de Supabase Studio](https://github.com/supabase/supabase/blob/master/apps/studio/hooks/custom-content/custom-content.json), que apunta a esta [descarga HTTPS del certificado de producción](https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt).
+3. Sustituye `SUPABASE_PROJECT_REF` por la referencia del mismo proyecto de la URI. Conserva `DATABASE_SCHEMA=constructora_private` y `DATABASE_SSL_CA_FILE=database/certs/supabase-prod-ca-2021.crt`, como indica `.env.example`. El repositorio incluye ese certificado raíz público de Supabase; no contiene credenciales. Su procedencia es la propiedad `ssl:certificate_url` del [código oficial de Supabase Studio](https://github.com/supabase/supabase/blob/master/apps/studio/hooks/custom-content/custom-content.json), que apunta a esta [descarga HTTPS del certificado de producción](https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt).
 
    El cliente valida el proyecto y el dominio del pooler, y siempre verifica el certificado y el nombre del servidor TLS. Un `sslmode=require` o `sslmode=verify-full` del panel se procesa manteniendo esa verificación. Si Supabase renueva el certificado o tu proyecto requiere otra CA, descarga la correspondiente desde **Database settings → SSL Configuration** y cambia `DATABASE_SSL_CA_FILE` a su ruta local. Si esta variable está vacía se usa la confianza del sistema, que puede no reconocer la CA de Supabase. No uses `rejectUnauthorized=false` ni `NODE_TLS_REJECT_UNAUTHORIZED=0`. [TLS de Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres#ssl), [TLS de node-postgres](https://node-postgres.com/features/ssl).
 

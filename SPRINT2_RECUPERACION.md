@@ -12,7 +12,13 @@ Se crea `token_recuperacion` en el esquema privado con RLS y sin acceso de Data 
 
 En desarrollo, `createMailer()` muestra el enlace en la consola local. En pruebas, `createMemoryMailer()` lo conserva en `outbox`. Son datos sensibles de desarrollo, nunca deben publicarse ni usarse con correos reales de clientes.
 
-**No hay proveedor de correo real configurado.** En producción el adaptador predeterminado está deshabilitado y recuperación responde 503 para cualquier correo, sin afirmar que envió un enlace. Para habilitar correo real, inyectar un adaptador con `send({ to, subject, text })` y configurar `APP_URL` con el origen HTTPS público. La URL del correo nunca se obtiene del Host recibido en producción. El login funciona sin servicio de correo.
+Se integra Resend mediante HTTPS (`POST https://api.resend.com/emails`), sin dependencias adicionales. En Render, configurar `RESEND_API_KEY` (clave con permiso de envío), `MAIL_FROM` (remitente verificado) y `APP_URL=https://metodologias-agiles-ci.onrender.com`. Los valores secretos se guardan exclusivamente como variables del servicio; nunca en Git. El servicio actual se administra desde el Dashboard de Render.
+
+Sin clave y remitente completos, recuperación permanece deshabilitada con 503 en producción. El adaptador limita cada envío a 10 segundos, rechaza redirecciones y no registra respuestas, claves ni enlaces. Un rechazo del proveedor conserva la respuesta genérica y revierte el token según las pruebas de recuperación. La URL del correo nunca se obtiene del Host recibido en producción. El login funciona sin servicio de correo.
+
+El remitente de prueba `onboarding@resend.dev` solo permite enviar al correo de la propia cuenta Resend. Para usuarios con otros correos es obligatorio verificar un dominio propio y usar un remitente de ese dominio. Verificar la recepción real antes de dar por terminado el despliegue.
+
+Antes de desplegar, aplicar la creación de `token_recuperacion`, activar RLS y revocar acceso a PUBLIC, anon, authenticated y service_role en el esquema privado. El arranque no migra tablas. La dependencia HU1a ya debe estar integrada en main; dirigir este PR a main.
 
 ## Validación
 

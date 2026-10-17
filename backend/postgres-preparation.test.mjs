@@ -64,10 +64,10 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
   });
   await t.test('ejecuta scripts reales con ON DELETE y ON CONFLICT DO NOTHING; crea tablas privadas incluyendo autenticación', async () => {
     const result = await initializePostgresDatabase(database, reviewed);
-    assert.deepEqual(result.createdTables, ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion']);
+    assert.deepEqual(result.createdTables, ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion', 'token_recuperacion']);
     assert.equal(result.seeded, true);
     assert.deepEqual(result.tables.map(({ name, rowCount }) => [name, rowCount]), [
-      ['contrato', 0], ['contrato_maquinaria', 0], ['maquinaria', 2], ['pago', 0], ['sesion', 0], ['usuario', 0],
+      ['contrato', 0], ['contrato_maquinaria', 0], ['maquinaria', 2], ['pago', 0], ['sesion', 0], ['token_recuperacion', 0], ['usuario', 0],
     ]);
     assert.equal(result.connection.targetProjectVerified, false);
     assert.ok(!JSON.stringify(result).includes(secret));
@@ -133,7 +133,7 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
   await t.test('validación de arranque lee tablas y permisos sin aplicar migraciones ni semillas', async () => {
     operations.length = 0;
     const inventory = await assertPostgresReady(database);
-    assert.equal(inventory.appTables.length, 6);
+    assert.equal(inventory.appTables.length, 7);
     assert.ok(inventory.appTables.every((table) => table.rlsEnabled && table.apiPrivileges.length === 0 && table.policies.length === 0));
     assertReadOnly(operations);
   });

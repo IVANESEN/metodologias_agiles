@@ -1,4 +1,4 @@
-const APP_TABLES = ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion'];
+const APP_TABLES = ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion', 'token_recuperacion'];
 const API_ROLES = ['anon', 'authenticated', 'service_role'];
 const INTERNAL_SCHEMAS = new Set(['auth', 'storage', 'realtime', '_realtime', 'extensions',
   'supabase_functions', 'supabase_migrations', 'vault', 'graphql', 'graphql_public',
@@ -28,6 +28,8 @@ const CURRENT_COLUMNS = {
     rol: 'character varying(20)', activo: 'boolean', creado_en: 'timestamp with time zone' },
   sesion: { id: 'uuid', usuario_id: 'uuid', token_hash: 'text', expira_en: 'timestamp with time zone',
     creado_en: 'timestamp with time zone' },
+  token_recuperacion: { id: 'uuid', usuario_id: 'uuid', token_hash: 'text', expira_en: 'timestamp with time zone',
+    usado_en: 'timestamp with time zone', creado_en: 'timestamp with time zone' },
 };
 
 export class PostgresPreparationError extends Error {
@@ -225,7 +227,7 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
     const primaryKey = table.name === 'contrato_maquinaria' ? ['contrato_id', 'maquinaria_id'] : ['id'];
     const hasPrimaryKey = table.constraints.some((constraint) => constraint.type === 'p' &&
       sameColumns(constraint.columns, primaryKey));
-    const foreignKeys = ['maquinaria', 'usuario'].includes(table.name) ? [] : table.name === 'sesion'
+    const foreignKeys = ['maquinaria', 'usuario'].includes(table.name) ? [] : ['sesion', 'token_recuperacion'].includes(table.name)
       ? [['usuario_id', 'usuario']] : table.name === 'contrato'
       ? [['maquinaria_id', 'maquinaria']] : table.name === 'pago' ? [['contrato_id', 'contrato']]
         : [['maquinaria_id', 'maquinaria'], ['contrato_id', 'contrato']];
@@ -236,9 +238,9 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
     if (!hasPrimaryKey || !hasForeignKeys) {
       fail('INCOMPATIBLE_EXISTING_TABLES', 'Faltan claves primarias o relaciones esperadas en las tablas existentes. Revisa el esquema antes de continuar.');
     }
-    if (['usuario', 'sesion'].includes(table.name)) {
+    if (['usuario', 'sesion', 'token_recuperacion'].includes(table.name)) {
       const uniqueColumn = table.name === 'usuario' ? 'correo' : 'token_hash';
-      const notNull = Object.keys(CURRENT_COLUMNS[table.name]).every(name =>
+      const notNull = Object.keys(CURRENT_COLUMNS[table.name]).filter(name => name !== 'usado_en').every(name =>
         table.columns.some(column => column.name === name && column.notNull));
       const unique = table.constraints.some(constraint => constraint.type === 'u' &&
         sameColumns(constraint.columns, [uniqueColumn]));

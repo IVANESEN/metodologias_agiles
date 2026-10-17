@@ -89,10 +89,10 @@ jobs:
     needs: [build, test]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build.result == 'success' && needs.test.result == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     environment:
       name: production
-      url: https://constructora-el-salvador.onrender.com
+      url: ${{ steps.service.outputs.app_url }}
     # Un solo despliegue a la vez; los pendientes esperan, no se cancelan a medias.
     concurrency:
       group: deploy-production
@@ -100,7 +100,6 @@ jobs:
     permissions:
       contents: read
     env:
-      APP_URL: https://constructora-el-salvador.onrender.com
       RENDER_API: https://api.render.com/v1
     steps:
       - name: Comprobar que los secretos estan configurados
@@ -132,6 +131,24 @@ jobs:
             echo "Despliegue omitido: main ya tiene un commit mas reciente ($latest)." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Obtener la URL del servicio configurado
+        id: service
+        if: ${{ steps.fresh.outputs.stale == 'false' }}
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          curl -fsS -m 30 \
+            -H "Authorization: Bearer $RENDER_API_KEY" -H 'Accept: application/json' \
+            "$RENDER_API/services/$RENDER_SERVICE_ID" > service.json
+          app_url=$(jq -er '.serviceDetails.url | select(type == "string")' service.json)
+          if [[ ! "$app_url" =~ ^https://[a-z0-9-]+\.onrender\.com/?$ ]]; then
+            echo '::error::Render no devolvio una URL HTTPS valida de onrender.com para el servicio.'
+            exit 1
+          fi
+          printf 'app_url=%s\n' "${app_url%/}" >> "$GITHUB_OUTPUT"
+
       - name: Solicitar el despliegue del commit probado
         id: trigger
         if: ${{ steps.fresh.outputs.stale == 'false' }}
@@ -161,6 +178,7 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
           DEPLOY_ID: ${{ steps.trigger.outputs.deploy_id }}
+          APP_URL: ${{ steps.service.outputs.app_url }}
         run: |
           set -euo pipefail
           for attempt in $(seq 1 80); do
@@ -178,9 +196,9 @@ jobs:
                 fi
                 {
                   echo '### Despliegue publicado'
-                  echo "- Deploy: \`$DEPLOY_ID\`"
-                  echo "- Commit: \`$GITHUB_SHA\`"
-                  echo "- URL: $APP_URL"
+                  printf -- '- Deploy: `%s`\n' "$DEPLOY_ID"
+                  printf -- '- Commit: `%s`\n' "$GITHUB_SHA"
+                  printf -- '- URL: %s\n' "$APP_URL"
                 } >> "$GITHUB_STEP_SUMMARY"
                 exit 0 ;;
               build_failed|update_failed|pre_deploy_failed|canceled|deactivated)
@@ -194,6 +212,8 @@ jobs:
 
       - name: Verificar la aplicacion publicada
         if: ${{ steps.fresh.outputs.stale == 'false' }}
+        env:
+          APP_URL: ${{ steps.service.outputs.app_url }}
         run: |
           set -euo pipefail
           for attempt in $(seq 1 12); do

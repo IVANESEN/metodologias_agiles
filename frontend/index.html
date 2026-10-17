@@ -11,7 +11,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="alertas.css">
     <script src="/app.js" type="module"></script>
+    <script src="/alertas.js" type="module"></script>
   </head>
   <body>
     <a class="skip-link" href="#catalogo">Ir al catálogo</a>
@@ -26,6 +28,7 @@
       <nav class="site-nav" aria-label="Secciones de la página">
         <a class="nav-tab" href="#catalogo">Catálogo</a>
         <a class="nav-tab" href="#contrato">Contrato</a>
+        <a class="nav-tab" href="#alertas">Alertas</a>
         <a class="nav-tab" href="#cobros">Cobros</a>
       </nav>
     </header>
@@ -127,6 +130,18 @@
           </form>
         </aside>
       </div>
+      <section class="alertas" id="alertas" aria-labelledby="alertas-title">
+        <div class="section-heading">
+          <div><p class="eyebrow">ALERTAS</p><h2 id="alertas-title">Contratos por vencer</h2></div>
+        </div>
+        <div class="field alertas-field">
+          <label for="alertas-dias">Avisar con estos días de anticipación</label>
+          <input id="alertas-dias" name="alertas_dias" type="number" inputmode="numeric" min="1" max="365" step="1" value="7" required aria-describedby="alertas-dias-help alertas-dias-error">
+          <p class="filter-help" id="alertas-dias-help">Entre 1 y 365 días. La lista se actualiza sola cada minuto.</p>
+          <p class="field-error" id="alertas-dias-error" hidden></p>
+        </div>
+        <div class="alertas-lista" id="alertas-lista" aria-live="polite" aria-busy="false"></div>
+      </section>
       <section class="cobros" id="cobros" aria-labelledby="cobros-title">
         <div class="section-heading">
           <div><p class="eyebrow">ESTADOS DE CUENTA</p><h2 id="cobros-title">Cobros pendientes</h2></div>

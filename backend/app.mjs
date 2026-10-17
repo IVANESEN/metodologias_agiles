@@ -5,6 +5,7 @@ import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mjs';
 import { buildContractPdf } from './contrato-pdf.mjs';
+import { hoyElSalvador, validarDias, buscarPorVencer } from './contratos-por-vencer.mjs';
 import { normalizeSignature } from '../frontend/firma-datos.mjs';
 
 const defaultFrontendDir = fileURLToPath(new URL('../frontend/', import.meta.url));
@@ -454,6 +455,13 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         const contract = await saveContract(database, input);
         response.setHeader('Location', `/api/contratos/${contract.id}`);
         return json(response, 201, contract);
+      }
+      // Va antes de las rutas /api/contratos/:id: si no, "por-vencer" se toma como un ID.
+      if (path === '/api/contratos/por-vencer' && request.method === 'GET') {
+        const { dias, error } = validarDias(url.searchParams.get('dias'));
+        if (error) throw new ApiError(400, 'VALIDATION_ERROR', error, { dias: error });
+        const hoy = hoyElSalvador();
+        return json(response, 200, { hoy, dias, contratos: await buscarPorVencer(database, { hoy, dias }) });
       }
       if (path === '/api/cobros' && request.method === 'GET') {
         return json(response, 200, await findPendingAccounts(database));

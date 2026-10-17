@@ -103,3 +103,14 @@ CREATE TABLE IF NOT EXISTS sesion (
   creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS sesion_usuario_idx ON sesion (usuario_id);
+
+-- HU1b: solo se almacena el hash del enlace temporal de recuperación.
+CREATE TABLE IF NOT EXISTS token_recuperacion (
+  id UUID PRIMARY KEY,
+  usuario_id UUID NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  token_hash TEXT UNIQUE NOT NULL,
+  expira_en TIMESTAMPTZ NOT NULL,
+  usado_en TIMESTAMPTZ,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS token_recuperacion_usuario_idx ON token_recuperacion (usuario_id);

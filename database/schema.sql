@@ -84,3 +84,22 @@ CREATE TABLE IF NOT EXISTS pago (
 );
 
 CREATE INDEX IF NOT EXISTS pago_contrato_idx ON pago (contrato_id);
+
+-- HU1a: usuarios y sesiones privadas; sin credenciales de demostración.
+CREATE TABLE IF NOT EXISTS usuario (
+  id UUID PRIMARY KEY,
+  correo VARCHAR(254) UNIQUE NOT NULL CHECK (correo = lower(trim(correo))),
+  nombre VARCHAR(160) NOT NULL CHECK (length(trim(nombre)) > 0),
+  clave_hash TEXT NOT NULL,
+  rol VARCHAR(20) NOT NULL DEFAULT 'residente' CHECK (rol IN ('residente','gerente')),
+  activo BOOLEAN NOT NULL DEFAULT TRUE,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS sesion (
+  id UUID PRIMARY KEY,
+  usuario_id UUID NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  token_hash TEXT UNIQUE NOT NULL,
+  expira_en TIMESTAMPTZ NOT NULL,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS sesion_usuario_idx ON sesion (usuario_id);

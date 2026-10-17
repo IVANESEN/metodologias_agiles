@@ -25,6 +25,8 @@
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
+
+
 * { box-sizing: border-box; }
 body { margin: 0; line-height: 1.6; }
 button, input, select { font: inherit; }
@@ -304,3 +306,14 @@ fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
   .cobro-card { padding: 16px; }
   .cobro-heading { flex-direction: column; }
 }
+
+/* HU1a login */
+.auth-page { width: min(440px, calc(100% - 40px)); margin: 10vh auto; padding: 28px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.auth-page h1 { font-size: 26px; margin: 8px 0 24px; }
+.auth-form { display: grid; gap: 16px; margin-bottom: 20px; }
+.auth-form .field { display: grid; gap: 8px; }
+.auth-form input { width: 100%; min-height: 44px; padding: 10px 12px; color: var(--text); background: var(--background); border: 1px solid var(--border); border-radius: 4px; }
+.auth-form .primary-button { justify-content: center; }
+#auth-message { margin: 0; line-height: 1.6; }
+.session-user { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+@media (max-width: 600px) { .header-inner { flex-wrap: wrap; gap: 16px; } .auth-page { padding: 20px; } }

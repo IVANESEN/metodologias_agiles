@@ -181,7 +181,7 @@ export async function inspectPostgresDatabase(database) {
         ownerIsApiRole: namespace[0]?.ownerIsApiRole === true,
         grants: schemaGrants.map(({ grantee, isCurrentRole, privilege }) => ({
           grantee: roleCategory(grantee, isCurrentRole), privilege })), objects },
-      dataApiPanelReviewRequired: true,
+      dataApiPanelReviewRequired: database.requiresDataApiReview !== false,
     };
   } catch (error) {
     if (error instanceof PostgresPreparationError) throw error;
@@ -301,22 +301,25 @@ export async function initializePostgresDatabase(database, {
   dataApiReviewed = process.env.SUPABASE_DATA_API_REVIEWED === 'true',
 } = {}) {
   const schema = schemaFor(database);
-  if (!dataApiReviewed) {
+  if (database.requiresDataApiReview !== false && !dataApiReviewed) {
     fail('DATA_API_REVIEW_REQUIRED', 'Antes de crear tablas, confirma en Supabase que el esquema privado no figura en Exposed schemas o desactiva la Data API. Después configura SUPABASE_DATA_API_REVIEWED=true.');
   }
   validateScripts(schemaSql, seedsSql);
   const verified = await database.verifyConnection();
-  if (!verified?.tls?.encrypted || !verified.tls.authorized) {
-    fail('DATABASE_TLS_NOT_VERIFIED', 'La preparación requiere una conexión cifrada con el certificado verificado.');
+  const privateNetwork = database.renderInternal === true && verified?.privateNetwork === true;
+  if (!privateNetwork && (!verified?.tls?.encrypted || !verified.tls.authorized)) {
+    fail('DATABASE_TLS_NOT_VERIFIED', 'La preparación requiere TLS verificado o la red privada interna de Render.');
   }
   const connection = { provider: 'postgresql', targetProjectVerified: verified.targetProjectVerified === true,
-    databaseSchema: schema, tls: { encrypted: true, authorized: true,
-      protocol: /^TLSv\d(?:\.\d)?$/.test(verified.tls.protocol) ? verified.tls.protocol : 'TLS' } };
+    databaseSchema: schema, privateNetwork,
+    tls: { encrypted: verified.tls?.encrypted === true, authorized: verified.tls?.authorized === true,
+      protocol: verified.tls?.encrypted === true
+        ? (/^TLSv\d(?:\.\d)?$/.test(verified.tls.protocol) ? verified.tls.protocol : 'TLS') : null } };
   const before = await inspectPostgresDatabase(database);
   checkInventory(before, schema, { existingReviewed });
   return database.transaction(async (tx) => {
     await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`constructora-init:${schema}`]);
-    const lockedInventory = await inspectPostgresDatabase({ ...tx, schema });
+    const lockedInventory = await inspectPostgresDatabase({ ...tx, schema, requiresDataApiReview: database.requiresDataApiReview });
     const existing = checkInventory(lockedInventory, schema, { existingReviewed });
     const { rows: roles } = await tx.query('SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[])', [API_ROLES]);
     const grantees = ['PUBLIC', ...roles.map(({ rolname }) => quoteIdentifier(rolname))].join(', ');
@@ -336,7 +339,7 @@ export async function initializePostgresDatabase(database, {
     const { rows } = await tx.query(`SELECT COUNT(*)::text AS count FROM ${quoteIdentifier(schema)}.maquinaria`);
     const seeded = String(rows[0].count) === '0' && Boolean(seedsSql.trim());
     if (seeded) await tx.exec(seedsSql);
-    const after = await inspectPostgresDatabase({ ...tx, schema });
+    const after = await inspectPostgresDatabase({ ...tx, schema, requiresDataApiReview: database.requiresDataApiReview });
     checkInventory(after, schema, { current: true });
     return { provider: 'postgresql', databaseSchema: schema, connection, seeded,
       createdTables: APP_TABLES.filter((name) => !existing.some((table) => table.name === name)),

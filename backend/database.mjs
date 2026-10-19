@@ -19,7 +19,7 @@ export function safeDatabaseError(error) {
   }
   const messages = {
     '28P01': 'PostgreSQL rechazó la autenticación. Revisa la contraseña local y su codificación URI.',
-    ENOTFOUND: 'No se pudo resolver el host. Copia de nuevo la URI de Connect > Session pooler.',
+    ENOTFOUND: 'No se pudo resolver el host. Revisa DATABASE_URL; fuera de Render usa la External Database URL del panel.',
     ECONNREFUSED: 'La conexión fue rechazada. Revisa el panel, la red y las restricciones de acceso.',
     ETIMEDOUT: 'La conexión agotó el tiempo de espera. Revisa la red y el estado del proyecto.',
     CERT_HAS_EXPIRED: 'El certificado TLS ha caducado. Revisa el certificado del servidor.',
@@ -40,6 +40,7 @@ export async function buildPostgresConfig({
   caFile = process.env.DATABASE_SSL_CA_FILE,
   projectRef = process.env.SUPABASE_PROJECT_REF,
   tlsVerificationDisabled = process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0',
+  runningOnRender = process.env.RENDER === 'true',
 } = {}) {
   const fail = (code, message) => { throw new DatabaseConfigurationError(code, message); };
   if (tlsVerificationDisabled) {
@@ -52,11 +53,24 @@ export async function buildPostgresConfig({
   }
   let uri;
   try { uri = new URL(connectionString); }
-  catch { fail('INVALID_DATABASE_URL', 'DATABASE_URL debe contener la URI PostgreSQL de Connect > Session pooler.'); }
+  catch { fail('INVALID_DATABASE_URL', 'DATABASE_URL debe contener una URI PostgreSQL del panel de tu proveedor.'); }
   if (!['postgres:', 'postgresql:'].includes(uri.protocol) || !uri.hostname ||
       !uri.username || !uri.password || !uri.pathname || uri.pathname === '/' || uri.hash ||
       /USUARIO_DEL_PANEL|CONTRASENA_CODIFICADA|HOST_DEL_PANEL|BASE_DEL_PANEL|YOUR-PASSWORD/i.test(connectionString)) {
     fail('INVALID_DATABASE_URL', 'DATABASE_URL debe ser una URI PostgreSQL completa del panel, con los marcadores sustituidos y la contraseña codificada.');
+  }
+  let hostname;
+  try { hostname = decodeURIComponent(uri.hostname).toLowerCase().replace(/\.$/, ''); }
+  catch { fail('INVALID_DATABASE_URL', 'Revisa la codificación URI del host PostgreSQL en .env.'); }
+  const renderInternal = /^dpg-[a-z0-9]+-[a-z]$/.test(uri.hostname);
+  const requiresDataApiReview = hostname.endsWith('.pooler.supabase.com') || hostname.endsWith('.supabase.co');
+  if (renderInternal) {
+    if (!runningOnRender) {
+      fail('RENDER_INTERNAL_URL', 'La Internal Database URL solo funciona dentro de Render, en la misma cuenta y región. Para esta computadora usa la External Database URL del panel.');
+    }
+    if (projectRef || caFile || (uri.port && uri.port !== '5432')) {
+      fail('INVALID_RENDER_INTERNAL_URL', 'Para la red privada de Render deja SUPABASE_PROJECT_REF y DATABASE_SSL_CA_FILE vacíos y usa el puerto PostgreSQL 5432.');
+    }
   }
   let username;
   try {
@@ -72,6 +86,9 @@ export async function buildPostgresConfig({
     }
   }
   const sslmode = uri.searchParams.get('sslmode');
+  if (renderInternal && sslmode !== null) {
+    fail('UNSAFE_TLS', 'La conexión interna usa la red privada de Render sin sslmode. Para TLS verificado usa la External Database URL.');
+  }
   if (sslmode !== null && !['require', 'verify-full'].includes(sslmode)) {
     fail('UNSAFE_TLS', 'Solo se admiten sslmode=require o verify-full; el backend siempre verifica certificado y hostname.');
   }
@@ -80,7 +97,7 @@ export async function buildPostgresConfig({
   uri.searchParams.delete('sslmode');
   let targetProjectVerified = false;
   if (projectRef) {
-    if (!/^[a-z]{20}$/.test(projectRef) || !uri.hostname.endsWith('.pooler.supabase.com') ||
+    if (!/^[a-z]{20}$/.test(projectRef) || !hostname.endsWith('.pooler.supabase.com') ||
         !username.endsWith(`.${projectRef}`) || username === `.${projectRef}`) {
       fail('WRONG_SUPABASE_TARGET', 'La URI no coincide con el Session pooler del SUPABASE_PROJECT_REF configurado. Copia los valores exactos del panel.');
     }
@@ -103,9 +120,13 @@ export async function buildPostgresConfig({
   return {
     schema,
     targetProjectVerified,
+    renderInternal,
+    requiresDataApiReview,
     poolConfig: {
       connectionString: uri.toString(),
-      ssl: { rejectUnauthorized: true, ...(ca ? { ca } : {}) },
+      // Render internal certificates are self-signed. Plaintext is allowed
+      // only for its exact private hostname while running inside Render.
+      ssl: renderInternal ? false : { rejectUnauthorized: true, ...(ca ? { ca } : {}) },
       sslnegotiation: 'postgres',
       max: 3,
       connectionTimeoutMillis: 10_000,
@@ -114,8 +135,11 @@ export async function buildPostgresConfig({
   };
 }
 
-function verifiedTls(client) {
+function connectionTls(client, renderInternal) {
   const stream = client.connection.stream;
+  if (renderInternal && stream.encrypted !== true) {
+    return { encrypted: false, authorized: false, protocol: null };
+  }
   if (stream.encrypted !== true || stream.authorized !== true) {
     throw new DatabaseConfigurationError('UNVERIFIED_TLS', 'La conexión no tiene TLS verificado. Revisa el certificado raíz y la URI del panel.');
   }
@@ -137,8 +161,8 @@ export async function createDatabase({
     const pool = new pg.Pool({
       ...config.poolConfig,
       async onConnect(client) {
-        verifiedTls(client);
-        // Session pooler preserves session state. Never fall back to public.
+        connectionTls(client, config.renderInternal);
+        // Direct PostgreSQL and session poolers preserve the search path.
         await client.query("SELECT set_config('search_path', $1, false)", [`${config.schema}, pg_catalog`]);
       },
     });
@@ -148,12 +172,15 @@ export async function createDatabase({
       provider: 'postgresql',
       schema: config.schema,
       targetProjectVerified: config.targetProjectVerified,
+      renderInternal: config.renderInternal,
+      requiresDataApiReview: config.requiresDataApiReview,
       async verifyConnection() {
         const client = await pool.connect();
         try {
-          const tls = verifiedTls(client);
+          const tls = connectionTls(client, config.renderInternal);
           await client.query('SELECT 1 AS connected');
-          return { provider: 'postgresql', targetProjectVerified: config.targetProjectVerified, databaseSchema: config.schema, tls };
+          return { provider: 'postgresql', targetProjectVerified: config.targetProjectVerified,
+            databaseSchema: config.schema, privateNetwork: config.renderInternal, tls };
         } finally { client.release(); }
       },
       query: (sql, params = []) => pool.query(sql, params),

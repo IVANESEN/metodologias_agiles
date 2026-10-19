@@ -19,7 +19,7 @@ services:
       - key: HOST
         value: 0.0.0.0
       - key: DATABASE_URL
-        # URI privada del proyecto Supabase elegido, introducida en Render.
+        # URI privada de Supabase > Connect > Session pooler, introducida en Render.
         sync: false
       - key: SUPABASE_PROJECT_REF
         sync: false

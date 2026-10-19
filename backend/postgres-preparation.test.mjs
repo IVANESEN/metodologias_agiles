@@ -12,6 +12,41 @@ const [schemaSql, seedsSql] = await Promise.all([
 ]);
 const reviewed = { schemaSql, seedsSql, dataApiReviewed: true };
 
+test('Render prepara PostgreSQL sin revisión de Supabase y conserva evidencia del transporte', async (t) => {
+  const embedded = new PGlite();
+  t.after(() => embedded.close());
+  for (const privateNetwork of [false, true]) {
+    const wrap = (connection) => ({
+      schema: 'constructora_private',
+      requiresDataApiReview: false,
+      query: (sql, params) => connection.query(sql, params),
+      exec: (sql) => connection.exec(sql),
+    });
+    const tls = privateNetwork
+      ? { encrypted: false, authorized: false, protocol: null }
+      : { encrypted: true, authorized: true, protocol: 'TLSv1.3' };
+    const database = {
+      ...wrap(embedded), renderInternal: privateNetwork,
+      verifyConnection: async () => ({ privateNetwork, tls }),
+      transaction: (callback) => embedded.transaction((tx) => callback(wrap(tx))),
+    };
+    if (privateNetwork) {
+      await assert.rejects(initializePostgresDatabase({ ...database, renderInternal: false },
+        { schemaSql, seedsSql, dataApiReviewed: false }), { code: 'DATABASE_TLS_NOT_VERIFIED' });
+      await assert.rejects(initializePostgresDatabase({ ...database,
+        verifyConnection: async () => ({ privateNetwork: false, tls }) },
+      { schemaSql, seedsSql, dataApiReviewed: false }), { code: 'DATABASE_TLS_NOT_VERIFIED' });
+    }
+    const result = await initializePostgresDatabase(database, { schemaSql, seedsSql, dataApiReviewed: false });
+    assert.equal(result.createdTables.length, 7);
+    assert.equal(result.connection.privateNetwork, privateNetwork);
+    assert.deepEqual(result.connection.tls, tls);
+    assert.equal((await inspectPostgresDatabase(database)).dataApiPanelReviewRequired, false);
+    await assertPostgresReady(database);
+    await embedded.exec('DROP SCHEMA constructora_private CASCADE');
+  }
+});
+
 function rejectsCode(promise, code) {
   return assert.rejects(promise, (error) => error instanceof PostgresPreparationError && error.code === code);
 }

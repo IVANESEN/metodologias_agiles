@@ -26,7 +26,7 @@ Abrir `http://localhost:3000`. En desarrollo, sin `DATABASE_URL`, se usa Postgre
 
 ## Conexión local a Supabase
 
-El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añadir el SDK de Supabase. Esta guía prepara la ejecución local con el proyecto de Supabase elegido. Para este despliegue se creó **constructora-averguers-ci**, dentro de **Metodologías Ágiles - Averguers**; copia su referencia desde el panel.
+El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añadir el SDK de Supabase. Esta guía prepara la ejecución local con el proyecto de Supabase elegido; copia su referencia desde el panel.
 
 1. En el panel de Supabase, abre ese proyecto y selecciona **Connect → Session pooler → URI**. Copia personalmente la cadena PostgreSQL del panel; conserva exactamente su host, puerto, usuario y base. La URL HTTPS del proyecto no es una cadena PostgreSQL. La región no permite deducir el host del pooler. [Guía oficial de conexión](https://supabase.com/docs/guides/database/connecting-to-postgres).
 
@@ -69,7 +69,7 @@ El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añ
    npm.cmd run db:verify
    ```
 
-   La verificación requiere Supabase: comprueba TLS, inicia temporalmente el servidor en la interfaz local y consulta `/api/health` y `/api/maquinaria`. Revisa su resultado antes de dar la conexión por terminada. `npm.cmd test` comprueba el comportamiento con PGlite y no demuestra una conexión a Supabase.
+   La verificación requiere PostgreSQL remoto: con esta configuración comprueba TLS y el proyecto Supabase, inicia temporalmente el servidor en la interfaz local y consulta `/api/health` y `/api/maquinaria`. Revisa su resultado antes de dar la conexión por terminada. `npm.cmd test` comprueba el comportamiento con PGlite y no demuestra una conexión a Supabase.
 
 8. Inicia la aplicación con `.env` ya configurado:
 
@@ -78,6 +78,12 @@ El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añ
    ```
 
    Abre `http://127.0.0.1:3000`. Los comandos cargan `.env` automáticamente; `HOST=127.0.0.1` mantiene el servidor accesible desde esta computadora. El arranque remoto comprueba el esquema sin crear tablas ni cargar semillas. Una variable `DATABASE_URL` ya definida en el entorno de la terminal tiene prioridad sobre `.env`; evita configuraciones antiguas sin imprimir su contenido.
+
+## Alternativa: conexión a Render PostgreSQL
+
+Si eliges una base PostgreSQL de Render, usa su **External Database URL** desde tu computadora y deja vacíos `SUPABASE_PROJECT_REF` y `DATABASE_SSL_CA_FILE`. El backend verifica TLS con las autoridades del sistema. La **Internal Database URL** solo funciona en la red privada de Render, para servicios de la misma cuenta y región; el backend la admite sin TLS cuando Render establece `RENDER=true` automáticamente. No establezcas esa variable manualmente en `.env`. [Conexiones de Render PostgreSQL](https://render.com/docs/postgresql-creating-connecting).
+
+Inspecciona y prepara el esquema explícitamente con `db:inspect` y `db:init`, según el inventario, y comprueba la conexión con `db:verify`. La revisión de Data API solo corresponde a Supabase. Cambiar `DATABASE_URL` no copia los datos de la base anterior ni actualiza las variables del servicio Render.
 
 ## Selección y contratos
 

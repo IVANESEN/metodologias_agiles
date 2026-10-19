@@ -10,9 +10,11 @@ try {
   database = await createDatabase();
   const verified = await database.verifyConnection();
   const connection = { provider: 'postgresql', targetProjectVerified: verified.targetProjectVerified === true,
+    privateNetwork: verified.privateNetwork === true,
     databaseSchema: database.schema, tls: { encrypted: verified.tls?.encrypted === true,
       authorized: verified.tls?.authorized === true,
-      protocol: /^TLSv\d(?:\.\d)?$/.test(verified.tls?.protocol) ? verified.tls.protocol : 'TLS' } };
+      protocol: verified.tls?.encrypted === true
+        ? (/^TLSv\d(?:\.\d)?$/.test(verified.tls?.protocol) ? verified.tls.protocol : 'TLS') : null } };
   const inventory = await inspectPostgresDatabase(database);
   console.info(JSON.stringify({ connection, inventory }, null, 2));
 } catch (error) {

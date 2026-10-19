@@ -1,8 +1,9 @@
 # Despliegue automático a Render con Supabase
 
-El servicio web `metodologias-agiles-ci` pertenece al proyecto nuevo
-**Metodologías Ágiles — CI** de Render y usa el proyecto nuevo **constructora-averguers-ci** de Supabase.
-`render.yaml` define únicamente ese servicio, en el plan gratuito.
+El servicio web `metodologias-agiles-ci` pertenece al proyecto
+**Metodologías Ágiles — CI** de Render y usa la base Supabase elegida en
+`DATABASE_URL`. `render.yaml` define únicamente ese servicio, en el plan
+gratuito; no crea ni copia bases de datos.
 
 ## Flujo de integración continua
 
@@ -21,7 +22,7 @@ y `pull_request`. Sus etapas corresponden al flujo del equipo:
 
 ## Configuración única
 
-### 1. Servicio nuevo y proyecto Supabase propio
+### 1. Servicio web y proyecto Supabase propio
 
 Crea el servicio web dentro del proyecto **Metodologías Ágiles — CI** y
 conéctalo a `IVANESEN/metodologias_agiles`, rama `main`. La configuración es:
@@ -46,7 +47,12 @@ En **Environment**, configura las variables de `render.yaml`:
 | `DATABASE_SCHEMA` | `constructora_private` |
 | `DATABASE_SSL_CA_FILE` | `database/certs/supabase-prod-ca-2021.crt` |
 
-El proyecto Supabase se crea en la organización **Metodologías Ágiles - Averguers**, con plan gratuito y región Oregon. La Data API y la exposición automática de nuevas tablas están desactivadas; el backend utiliza `pg`. Inicializa las cuatro tablas y el catálogo de ejemplo en `constructora_private`, con RLS y sin permisos para los roles de la Data API, antes de iniciar el servidor.
+El backend utiliza PostgreSQL con `pg`. Antes de inicializar el esquema,
+revisa en el proyecto Supabase elegido que `constructora_private` no figure
+en **Exposed schemas**, o desactiva la Data API si ninguna aplicación depende
+de ella. Solo después de comprobarlo configura
+`SUPABASE_DATA_API_REVIEWED=true` en el entorno privado donde ejecutes
+`db:init`; el indicador no cambia la configuración del panel.
 
 Introduce `DATABASE_URL` y `SUPABASE_PROJECT_REF` únicamente en el entorno privado de Render;
 `sync: false` permite introducir los valores al configurar el servicio sin fijarlos en el Blueprint. Conserva el usuario,
@@ -58,11 +64,17 @@ siempre verifica el certificado y el nombre del servidor.
 Render asigna `PORT` automáticamente. El `HOST=127.0.0.1` de `.env.example`
 sirve para desarrollo local; en Render se usa `0.0.0.0`.
 
-Antes del primer despliegue, comprueba la conexión y el esquema existentes
-con `npm run db:verify` desde un entorno privado ya configurado. Ese comando
-solo verifica TLS y lecturas de `/api/health` y `/api/maquinaria`. El servidor
-en producción comprueba el esquema al arrancar; la preparación o migración
-de tablas se realiza explícitamente siguiendo la guía Supabase del README.
+Antes del primer despliegue, sigue la [guía Supabase del README](README.md#conexión-local-a-supabase)
+desde un entorno privado ya configurado: ejecuta `npm run db:inspect`, revisa
+el inventario y prepara el esquema explícitamente con `db:init` cuando
+corresponda. Después ejecuta `npm run db:verify`; comprueba TLS, el esquema
+y las lecturas de `/api/health` y `/api/maquinaria` sin crear tablas ni datos.
+El servidor en producción comprueba el esquema al arrancar y no ejecuta
+migraciones automáticamente.
+
+Cambiar `DATABASE_URL` no copia los datos de la base anterior. Editar `.env`
+o estos archivos tampoco modifica las variables reales de Render ni publica
+un despliegue; actualiza el entorno privado del servicio antes de desplegar.
 
 ### 2. Dos secretos de GitHub Actions
 

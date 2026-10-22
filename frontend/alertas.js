@@ -3,6 +3,9 @@
 // pestaña y cada 60 s mientras la pestaña está visible. Una petición nueva
 // cancela la anterior para que una respuesta lenta no pise a una más reciente.
 // El DOM se arma con createElement y textContent, nunca con innerHTML.
+import { sessionReady, hasPermission } from './sesion.js';
+
+if (await sessionReady && hasPermission('alertas.consultar')) {
 const DIAS_POR_DEFECTO = 7;
 const DIAS_MAXIMO = 365;
 const REFRESCO_MS = 60_000;
@@ -15,6 +18,7 @@ const lista = document.getElementById('alertas-lista');
 let peticion = null;
 let espera = null;
 let ultimaRespuesta = '';
+let permisoRechazado = false;
 
 function element(tag, className, text) {
   const result = document.createElement(tag);
@@ -62,13 +66,13 @@ function mostrarCargando() {
   mostrarEstado(element('span', 'spinner'), element('p', '', 'Cargando contratos por vencer…'));
 }
 
-function mostrarFallo() {
+function mostrarFallo(mensaje = 'Revisa tu conexión e inténtalo de nuevo.') {
   ultimaRespuesta = '';
   const reintentar = element('button', 'retry-button', 'Reintentar');
   reintentar.type = 'button';
-  reintentar.addEventListener('click', () => cargar());
+  reintentar.addEventListener('click', () => { permisoRechazado = false; cargar(); });
   mostrarEstado(element('strong', '', 'No se pudieron cargar las alertas'),
-    element('p', '', 'Revisa tu conexión e inténtalo de nuevo.'), reintentar);
+    element('p', '', mensaje), reintentar);
 }
 
 function itemContrato(contrato) {
@@ -102,6 +106,7 @@ function mostrarLista(contratos, dias) {
 // silencioso: refresco de fondo; no muestra "Cargando" y no vuelve a dibujar
 // (ni a anunciar en aria-live) si la respuesta no cambió.
 async function cargar({ silencioso = false } = {}) {
+  if (!hasPermission('alertas.consultar') || permisoRechazado) return;
   const dias = leerDias();
   if (dias === null) {
     peticion?.abort();
@@ -119,13 +124,17 @@ async function cargar({ silencioso = false } = {}) {
       signal: actual.signal, cache: 'no-store', headers: { Accept: 'application/json' },
     });
     const body = await response.json().catch(() => null);
+    if (response.status === 403) {
+      permisoRechazado = true;
+      throw new Error(body?.error?.message || 'No tienes permiso para consultar las alertas.');
+    }
     if (!response.ok || !body || !Array.isArray(body.contratos)) throw new Error('respuesta inválida');
     const texto = JSON.stringify(body);
     if (silencioso && texto === ultimaRespuesta) return;
     ultimaRespuesta = texto;
     mostrarLista(body.contratos, body.dias);
-  } catch {
-    if (!actual.signal.aborted) mostrarFallo();
+  } catch (error) {
+    if (!actual.signal.aborted) mostrarFallo(permisoRechazado ? error.message : undefined);
   } finally {
     if (peticion === actual) lista.setAttribute('aria-busy', 'false');
   }
@@ -143,3 +152,4 @@ setInterval(() => {
   if (document.visibilityState === 'visible') cargar({ silencioso: true });
 }, REFRESCO_MS);
 cargar();
+}

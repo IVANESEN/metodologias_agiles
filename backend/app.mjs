@@ -7,8 +7,9 @@ import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mj
 import { buildContractPdf } from './contrato-pdf.mjs';
 import { hoyElSalvador, validarDias, buscarPorVencer } from './contratos-por-vencer.mjs';
 import { normalizeSignature } from '../frontend/firma-datos.mjs';
-import { AuthError, handleAuthRoutes, guardSession, checkRequestOrigin } from './auth.mjs';
+import { AuthError, handleAuthRoutes, guardSession, guardPermission, checkRequestOrigin } from './auth.mjs';
 import { handleRecoveryRoutes } from './recuperacion.mjs';
+import { resolverRutaProtegida } from './permisos.mjs';
 
 const defaultFrontendDir = fileURLToPath(new URL('../frontend/', import.meta.url));
 const MAX_BODY_BYTES = 16_384;
@@ -423,12 +424,23 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
     try {
       const url = new URL(request.url, 'http://localhost');
       const path = url.pathname;
-      // HU1: autenticación. Las pruebas existentes pueden usar el servidor sin guardia.
+      // La ejecución normal activa requireAuth; las pruebas anteriores pueden
+      // ejercitar el negocio aisladamente sin autenticación ni autorización.
       const authContext = { request, response, path, database, json, readJson, mailer, appUrl, secureCookies };
       if (requireAuth || path.startsWith('/api/auth/')) checkRequestOrigin(request, { secureCookies, appUrl });
       if (await handleAuthRoutes(authContext)) return;
       if (await handleRecoveryRoutes(authContext)) return;
       if (requireAuth && await guardSession(authContext)) return;
+      const ruta = resolverRutaProtegida(request.method, path);
+      if (ruta?.metodoNoPermitido || (path === '/api/health' && request.method !== 'GET')) {
+        throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
+      }
+      // Las API nuevas no llegan al despacho de negocio hasta registrar su
+      // método, ruta y permiso. La sesión ya validada se reutiliza una sola vez.
+      if (path.startsWith('/api/') && path !== '/api/health' && !ruta) {
+        throw new ApiError(404, 'NOT_FOUND', 'No se encontró el recurso solicitado.');
+      }
+      if (requireAuth && ruta) guardPermission(authContext, ruta.permiso);
       if (path === '/api/health' && request.method === 'GET') {
         try { await database.query('SELECT 1 AS healthy'); }
         catch { throw new ApiError(503, 'DATABASE_UNAVAILABLE', 'La base de datos no está disponible.'); }
@@ -440,11 +452,11 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
           ...(commit ? { commit } : {}),
         });
       }
-      if (path === '/api/maquinaria' && request.method === 'GET') {
+      if (ruta?.operacion === 'maquinaria.consultar') {
         const filters = validateMachineryFilters(url.searchParams);
         return json(response, 200, await findMachinery(database, filters));
       }
-      if (path === '/api/reservas/ocupadas' && request.method === 'GET') {
+      if (ruta?.operacion === 'reservas.consultar') {
         const id = Number(url.searchParams.get('maquinaria_id'));
         if (!Number.isInteger(id) || id < 1 || id > 2147483647) {
           throw new ApiError(400, 'VALIDATION_ERROR', 'Selecciona una maquinaria válida.');
@@ -460,40 +472,34 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         return json(response, 200, rows);
       }
 
-      if (path === '/api/contratos' && request.method === 'POST') {
+      if (ruta?.operacion === 'contratos.crear') {
         const input = validateContract(await readJson(request));
         const contract = await saveContract(database, input);
         response.setHeader('Location', `/api/contratos/${contract.id}`);
         return json(response, 201, contract);
       }
-      // Va antes de las rutas /api/contratos/:id: si no, "por-vencer" se toma como un ID.
-      if (path === '/api/contratos/por-vencer' && request.method === 'GET') {
+      if (ruta?.operacion === 'alertas.consultar') {
         const { dias, error } = validarDias(url.searchParams.get('dias'));
         if (error) throw new ApiError(400, 'VALIDATION_ERROR', error, { dias: error });
         const hoy = hoyElSalvador();
         return json(response, 200, { hoy, dias, contratos: await buscarPorVencer(database, { hoy, dias }) });
       }
-      if (path === '/api/cobros' && request.method === 'GET') {
+      if (ruta?.operacion === 'cobros.consultar') {
         return json(response, 200, await findPendingAccounts(database));
       }
-      const paymentMatch = /^\/api\/contratos\/([^/]+)\/pagos$/.exec(path);
-      if (paymentMatch) {
-        if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
-        const id = paymentMatch[1];
+      if (ruta?.operacion === 'pagos.registrar') {
+        const [id] = ruta.parametros;
         if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         const { replayed, ...result } = await savePayment(database, id, validatePayment(await readJson(request)));
         return json(response, replayed ? 200 : 201, result);
       }
-      const signatureMatch = /^\/api\/contratos\/([^/]+)\/firma$/.exec(path);
-      if (signatureMatch) {
-        if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
-        const id = signatureMatch[1];
+      if (ruta?.operacion === 'contratos.firmar') {
+        const [id] = ruta.parametros;
         if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         return json(response, 200, await saveSignature(database, id, await readJson(request, 131_072)));
       }
-      const documentMatch = /^\/api\/contratos\/([^/]+)\/documento$/.exec(path);
-      if (documentMatch && request.method === 'GET') {
-        const id = documentMatch[1];
+      if (ruta?.operacion === 'contratos.documento') {
+        const [id] = ruta.parametros;
         if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         const { rows } = await database.query(`SELECT ${CONTRACT_COLUMNS} FROM contrato WHERE id = $1`, [id]);
         if (!rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
@@ -501,9 +507,8 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
       }
       // El PDF se genera completo antes de responder: si algo falla, el cliente
       // recibe un error JSON y nunca un PDF a medias.
-      const pdfMatch = /^\/api\/contratos\/([^/]+)\/pdf$/.exec(path);
-      if (pdfMatch && request.method === 'GET') {
-        const id = pdfMatch[1];
+      if (ruta?.operacion === 'contratos.pdf') {
+        const [id] = ruta.parametros;
         if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         const { rows } = await database.query(`SELECT ${CONTRACT_COLUMNS} FROM contrato WHERE id = $1`, [id]);
         if (!rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
@@ -515,16 +520,14 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         });
         return response.end(pdf);
       }
-      if (path.startsWith('/api/contratos/') && request.method === 'GET') {
-        const id = path.slice('/api/contratos/'.length);
+      if (ruta?.operacion === 'contratos.consultar') {
+        const [id] = ruta.parametros;
         if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         const { rows } = await database.query(`SELECT ${CONTRACT_COLUMNS} FROM contrato WHERE id = $1`, [id]);
         if (!rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
         return json(response, 200, await contractWithMachinery(database, rows[0]));
       }
       if (path.startsWith('/api/')) {
-        const known = ['/api/maquinaria', '/api/contratos', '/api/cobros', '/api/health'].includes(path) || path.startsWith('/api/contratos/');
-        if (known) throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
         throw new ApiError(404, 'NOT_FOUND', 'No se encontró el recurso solicitado.');
       }
       if (!['GET', 'HEAD'].includes(request.method)) {

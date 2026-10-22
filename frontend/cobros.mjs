@@ -142,6 +142,7 @@ export function createCobrosStore({ request, createId = paymentId, onChange = ()
 export function createCobrosPanel(readResponse, options = {}) {
   const document = options.document || globalThis.document;
   const fetch = options.fetch || globalThis.fetch;
+  const hasPermission = options.hasPermission || (() => false);
   const ui = Object.fromEntries(['list', 'status', 'count', 'refresh', 'error', 'notice'].map(name => [name, document.getElementById(`cobros-${name}`)]));
   const cards = new Map();
   function element(tag, className, text) {
@@ -172,6 +173,7 @@ export function createCobrosPanel(readResponse, options = {}) {
     const balance = moneyRow('Saldo pendiente', 'cobro-balance');
     totals.append(total.row, paid.row, balance.row);
     const form = element('form', 'cobro-form');
+    form.hidden = !hasPermission('pagos.registrar');
     form.noValidate = true;
     form.setAttribute('aria-label', `Registrar pago del contrato ${contract.id}`);
     const field = element('div', 'field');
@@ -202,6 +204,7 @@ export function createCobrosPanel(readResponse, options = {}) {
     input.addEventListener('input', () => store.setAmount(contract.id, input.value));
     form.addEventListener('submit', async event => {
       event.preventDefault();
+      if (!hasPermission('pagos.registrar')) return;
       const result = await store.pay(contract.id);
       const snapshot = store.getSnapshot();
       if (!result && snapshot.drafts[contract.id]?.error) input.focus();
@@ -245,24 +248,30 @@ export function createCobrosPanel(readResponse, options = {}) {
       nodes.paid.textContent = currency.format(Number(contract.total_pagado));
       nodes.balance.textContent = currency.format(Number(contract.saldo_pendiente));
       if (nodes.input.value !== draft.amount) nodes.input.value = draft.amount;
-      nodes.input.disabled = loading || payingId !== null;
+      nodes.form.hidden = !hasPermission('pagos.registrar');
+      nodes.input.disabled = !hasPermission('pagos.registrar') || loading || payingId !== null;
       nodes.input.setAttribute('aria-invalid', String(Boolean(draft.error)));
       nodes.error.textContent = draft.error;
       nodes.error.hidden = !draft.error;
       nodes.form.setAttribute('aria-busy', String(payingId === contract.id));
-      nodes.submit.disabled = loading || payingId !== null;
+      nodes.submit.disabled = !hasPermission('pagos.registrar') || loading || payingId !== null;
       nodes.submit.textContent = payingId === contract.id ? 'Registrando pago…' : 'Registrar pago';
     }
   }
   const store = createCobrosStore({
-    request: async (path, init) => readResponse(await fetch(path, init)),
+    request: async (path, init) => {
+      const permission = init?.method === 'POST' ? 'pagos.registrar' : 'cobros.consultar';
+      if (!hasPermission(permission)) throw new Error('No tienes permiso para realizar esta acción.');
+      return readResponse(await fetch(path, init));
+    },
     createId: options.createId,
     onChange: render,
   });
-  ui.refresh.addEventListener('click', () => store.load());
+  ui.refresh.addEventListener('click', () => { if (hasPermission('cobros.consultar')) store.load(); });
   render(store.getSnapshot());
   return {
     async load() {
+      if (!hasPermission('cobros.consultar')) return false;
       const alreadyLoading = store.getSnapshot().loading;
       const result = await store.load();
       // Una creación puede terminar mientras la consulta inicial sigue en curso.

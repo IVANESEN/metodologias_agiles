@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
+import { permisosParaRol, tienePermiso } from './permisos.mjs';
 
 const derive = promisify(scrypt);
 // OWASP scrypt profile: N=2^16, r=8, p=2. No password or session token is stored in clear text.
@@ -105,21 +106,31 @@ export async function handleAuthRoutes({ request, response, path, database, json
   } else {
     const user = await currentUser(database, request);
     if (!user) throw new AuthError(401, 'UNAUTHENTICATED', 'Inicia sesión para continuar.');
-    json(response, 200, user);
+    json(response, 200, { ...publicUser(user), permisos: permisosParaRol(user.rol) });
   }
   return true;
 }
 const PUBLIC_FILES = new Set(['/login.html','/login.js','/auth-form.js','/recuperar.html','/recuperar.js',
   '/restablecer.html','/restablecer.js','/styles.css','/favicon.svg']);
-export async function guardSession({ request, response, path, database }) {
+export async function guardSession(context) {
+  const { request, response, path, database } = context;
   if (path === '/api/health' || path.startsWith('/api/auth/') || PUBLIC_FILES.has(path)) return false;
   response.setHeader('Cache-Control', 'no-store');
   const user = await currentUser(database, request);
-  if (user) return false;
+  if (user) {
+    context.user = user;
+    return false;
+  }
   if (['GET', 'HEAD'].includes(request.method) && ['/', '/index.html'].includes(path)) {
     response.writeHead(302, { Location: '/login.html' }); response.end(); return true;
   }
   throw new AuthError(401, 'UNAUTHENTICATED', 'Inicia sesión para continuar.');
+}
+export function guardPermission({ user }, permiso) {
+  if (!user) throw new AuthError(401, 'UNAUTHENTICATED', 'Inicia sesión para continuar.');
+  if (!tienePermiso(user.rol, permiso)) {
+    throw new AuthError(403, 'FORBIDDEN', 'No tienes permiso para realizar esta acción.');
+  }
 }
 export function checkRequestOrigin(request, { secureCookies, appUrl }) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method) || !request.headers.origin) return;

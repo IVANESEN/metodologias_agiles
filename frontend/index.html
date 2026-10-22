@@ -17,7 +17,7 @@
     <script src="/alertas.js" type="module"></script>
   </head>
   <body>
-    <a class="skip-link" href="#catalogo">Ir al catálogo</a>
+    <a class="skip-link" href="#catalogo" data-permission="maquinaria.consultar" hidden>Ir al catálogo</a>
     <header class="site-header">
       <div class="header-inner">
         <a class="brand" href="/" aria-label="Constructora El Salvador, inicio">
@@ -27,14 +27,16 @@
         <span class="header-label"><span class="status-dot" aria-hidden="true"></span> Alquiler de maquinaria</span>
       </div>
       <nav class="site-nav" aria-label="Secciones de la página">
-        <a class="nav-tab" href="#catalogo">Catálogo</a>
-        <a class="nav-tab" href="#contrato">Contrato</a>
-        <a class="nav-tab" href="#alertas">Alertas</a>
-        <a class="nav-tab" href="#cobros">Cobros</a>
+        <a class="nav-tab" href="#catalogo" data-permission="maquinaria.consultar" hidden>Catálogo</a>
+        <a class="nav-tab" href="#contrato" data-permission="contratos.consultar" hidden>Contrato</a>
+        <a class="nav-tab" href="#alertas" data-permission="alertas.consultar" hidden>Alertas</a>
+        <a class="nav-tab" href="#cobros" data-permission="cobros.consultar" hidden>Cobros</a>
       </nav>
     </header>
 
-    <main class="page-shell">
+    <p class="page-shell" id="session-status" role="status">Comprobando sesión…</p>
+    <main class="page-shell" hidden>
+      <p class="form-error" id="permission-notice" role="alert" hidden></p>
       <section class="intro" aria-labelledby="page-title">
         <p class="eyebrow">TU OBRA, EN MARCHA</p>
         <h1 id="page-title">El equipo que tu<br>proyecto necesita.</h1>
@@ -49,7 +51,7 @@
       </section>
 
       <div class="workspace">
-        <section class="catalogue" id="catalogo" aria-labelledby="catalogue-title">
+        <section class="catalogue" id="catalogo" aria-labelledby="catalogue-title" data-permission="maquinaria.consultar" hidden>
           <div class="section-heading">
             <div><p class="eyebrow">CATÁLOGO</p><h2 id="catalogue-title">Maquinaria disponible</h2></div>
             <span class="catalogue-count" id="catalogue-count" role="status" aria-live="polite" aria-atomic="true" hidden></span>
@@ -73,7 +75,7 @@
           <p class="catalogue-note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.2"/></svg> Las tarifas se muestran en dólares por día. El día de inicio y el día de fin se incluyen en el alquiler.</p>
         </section>
 
-        <aside class="booking-panel" id="contrato" aria-labelledby="booking-title">
+        <aside class="booking-panel" id="contrato" aria-labelledby="booking-title" data-permission="contratos.consultar" hidden>
           <div class="panel-heading"><span class="step-label">TU ALQUILER</span><h2 id="booking-title">Configura tu contrato</h2><p>Todas las máquinas comparten cliente, ciudad y fechas.</p></div>
           <section class="confirmation" id="confirmation" hidden tabindex="-1" aria-labelledby="confirmation-title">
             <div class="success-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-8"/></svg></div>
@@ -84,9 +86,9 @@
             <ul class="confirmed-equipment" id="confirmed-equipment"></ul>
             <dl class="confirmation-details" id="confirmation-details"></dl>
             <div class="contract-id"><span>Número de contrato</span><code id="contract-id"></code></div>
-            <details class="contract-document" id="contract-document"><summary>Ver cláusulas del contrato</summary><div id="contract-clauses"></div></details>
-            <a class="contract-permalink" id="contract-permalink" href="#contrato">Enlace para reabrir este contrato en el teléfono</a>
-            <form class="signature-form" id="signature-form" novalidate aria-labelledby="signature-title">
+            <details class="contract-document" id="contract-document" data-permission="contratos.documento" hidden><summary>Ver cláusulas del contrato</summary><div id="contract-clauses"></div></details>
+            <a class="contract-permalink" id="contract-permalink" href="#contrato" data-permission="contratos.consultar" hidden>Enlace para reabrir este contrato en el teléfono</a>
+            <form class="signature-form" id="signature-form" novalidate aria-labelledby="signature-title" data-permission="contratos.firmar" hidden>
               <h4 id="signature-title">Firma simulada del cliente</h4>
               <p id="signature-status" role="status" aria-live="polite"></p>
               <p class="signature-help" id="signature-help">Firma dentro del recuadro con el dedo, lápiz o ratón. La firma guardada quedará vinculada a este contrato y se incluirá en el PDF.</p>
@@ -97,9 +99,9 @@
                 <button class="primary-button" id="save-signature" type="submit" disabled>Guardar firma</button>
               </div>
             </form>
-            <button class="primary-button" id="new-contract" type="button">Crear otro contrato <span aria-hidden="true">→</span></button>
+            <button class="primary-button" id="new-contract" type="button" data-permission="contratos.crear" hidden>Crear otro contrato <span aria-hidden="true">→</span></button>
           </section>
-          <form id="booking-form" novalidate>
+          <form id="booking-form" novalidate data-permission="contratos.crear" hidden>
             <section class="selected-equipment" id="selected-equipment" tabindex="-1" aria-labelledby="selection-heading" aria-describedby="selection-error">
               <div class="selection-heading"><span class="selected-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18h16M7 18V9h10v9M9 9V5h6v4"/></svg></span><div><span class="selection-label" id="selection-heading">MAQUINARIA SELECCIONADA</span><p id="selected-name" role="status" aria-live="polite">Selecciona una o varias máquinas del catálogo</p></div></div>
               <ul class="selected-list" id="selected-list" hidden></ul>
@@ -131,7 +133,7 @@
           </form>
         </aside>
       </div>
-      <section class="alertas" id="alertas" aria-labelledby="alertas-title">
+      <section class="alertas" id="alertas" aria-labelledby="alertas-title" data-permission="alertas.consultar" hidden>
         <div class="section-heading">
           <div><p class="eyebrow">ALERTAS</p><h2 id="alertas-title">Contratos por vencer</h2></div>
         </div>
@@ -143,7 +145,7 @@
         </div>
         <div class="alertas-lista" id="alertas-lista" aria-live="polite" aria-busy="false"></div>
       </section>
-      <section class="cobros" id="cobros" aria-labelledby="cobros-title">
+      <section class="cobros" id="cobros" aria-labelledby="cobros-title" data-permission="cobros.consultar" hidden>
         <div class="section-heading">
           <div><p class="eyebrow">ESTADOS DE CUENTA</p><h2 id="cobros-title">Cobros pendientes</h2></div>
           <div class="cobros-actions"><span class="catalogue-count" id="cobros-count" role="status" aria-live="polite" aria-atomic="true" hidden></span><button class="retry-button" id="cobros-refresh" type="button">Actualizar</button></div>

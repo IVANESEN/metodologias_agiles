@@ -13,6 +13,9 @@ import { resolverRutaProtegida } from './permisos.mjs';
 
 const defaultFrontendDir = fileURLToPath(new URL('../frontend/', import.meta.url));
 const MAX_BODY_BYTES = 16_384;
+const MAX_RECEPTION_BODY_BYTES = 7_100_000;
+const MAX_RECEPTION_PHOTO_BYTES = 1_000_000;
+const MAX_RECEPTION_TOTAL_PHOTO_BYTES = 5_000_000;
 const DAY_MS = 86_400_000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIME = {
@@ -271,6 +274,138 @@ export function validatePayment(body) {
   return { id: body.id?.toLowerCase() || randomUUID(), monto: `${Number(whole)}.${decimals.padEnd(2, '0')}` };
 }
 
+function validImageSignature(type, bytes) {
+  if (type === 'jpeg') {
+    return bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff &&
+      bytes.at(-2) === 0xff && bytes.at(-1) === 0xd9;
+  }
+  if (type === 'png') {
+    return bytes.length >= 33 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
+      bytes.subarray(12, 16).toString('ascii') === 'IHDR';
+  }
+  return type === 'webp' && bytes.length >= 16 && bytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    bytes.subarray(8, 12).toString('ascii') === 'WEBP' &&
+    ['VP8 ', 'VP8L', 'VP8X'].includes(bytes.subarray(12, 16).toString('ascii'));
+}
+
+export function validateReception(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos de la recepción.');
+  }
+  const fields = {};
+  const id = body.id === undefined ? randomUUID() : body.id;
+  if (typeof id !== 'string' || !UUID_PATTERN.test(id)) {
+    fields.id = 'El identificador de la recepción no es válido.';
+  }
+  if (typeof body.contrato_id !== 'string' || !UUID_PATTERN.test(body.contrato_id)) {
+    fields.contrato_id = 'El identificador del contrato no es válido.';
+  }
+  if (!Number.isInteger(body.maquinaria_id) || body.maquinaria_id < 1 || body.maquinaria_id > 2_147_483_647) {
+    fields.maquinaria_id = 'Selecciona una maquinaria válida.';
+  }
+  if (!Number.isInteger(body.horometro) || body.horometro < 0 || body.horometro > 2_147_483_647) {
+    fields.horometro = 'Ingresa una lectura entera del horómetro entre 0 y 2147483647.';
+  }
+  const photos = [];
+  let totalBytes = 0;
+  if (!Array.isArray(body.fotos) || body.fotos.length < 1 || body.fotos.length > 5) {
+    fields.fotos = 'Adjunta entre 1 y 5 fotografías.';
+  } else {
+    for (const photo of body.fotos) {
+      const match = typeof photo === 'string'
+        ? /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(photo) : null;
+      if (!match || match[2].length % 4 !== 0) {
+        fields.fotos = 'Las evidencias deben ser fotografías JPEG, PNG o WebP válidas.';
+        break;
+      }
+      const bytes = Buffer.from(match[2], 'base64');
+      if (bytes.toString('base64') !== match[2] || !validImageSignature(match[1], bytes)) {
+        fields.fotos = 'El contenido de una fotografía no coincide con su formato.';
+        break;
+      }
+      if (bytes.length > MAX_RECEPTION_PHOTO_BYTES) {
+        fields.fotos = 'Cada fotografía debe ocupar como máximo 1 MB después de optimizarse.';
+        break;
+      }
+      totalBytes += bytes.length;
+      photos.push(`data:image/${match[1]};base64,${match[2]}`);
+    }
+    if (!fields.fotos && totalBytes > MAX_RECEPTION_TOTAL_PHOTO_BYTES) {
+      fields.fotos = 'Las fotografías superan el límite total de 5 MB.';
+    }
+  }
+  if (Object.keys(fields).length) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos de la recepción.', fields);
+  }
+  return {
+    id: id.toLowerCase(), contrato_id: body.contrato_id.toLowerCase(),
+    maquinaria_id: body.maquinaria_id, horometro: body.horometro, fotos: photos,
+  };
+}
+
+function sameReception(row, input) {
+  return row.contrato_id === input.contrato_id && Number(row.maquinaria_id) === input.maquinaria_id &&
+    Number(row.horometro) === input.horometro && JSON.stringify(row.fotos) === JSON.stringify(input.fotos);
+}
+
+export async function saveReception(database, input) {
+  const contract = await database.query('SELECT id FROM contrato WHERE id = $1', [input.contrato_id]);
+  if (!contract.rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
+  const membership = await database.query(
+    `SELECT maquinaria_id, maquinaria_nombre FROM contrato_maquinaria
+     WHERE contrato_id = $1 AND maquinaria_id = $2`, [input.contrato_id, input.maquinaria_id],
+  );
+  if (!membership.rows[0]) {
+    throw new ApiError(409, 'MACHINERY_NOT_IN_CONTRACT', 'La maquinaria seleccionada no pertenece al contrato.',
+      { maquinaria_id: 'Selecciona una maquinaria incluida en este contrato.' });
+  }
+  let inserted;
+  try {
+    inserted = await database.query(
+      `INSERT INTO recepcion_maquinaria (id, contrato_id, maquinaria_id, horometro, fotos)
+       VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT DO NOTHING
+       RETURNING id, contrato_id, maquinaria_id, horometro, fotos, fecha_recepcion::text`,
+      [input.id, input.contrato_id, input.maquinaria_id, input.horometro, JSON.stringify(input.fotos)],
+    );
+  } catch (error) {
+    if (error.code === '23503') {
+      throw new ApiError(409, 'MACHINERY_NOT_IN_CONTRACT', 'La maquinaria ya no pertenece al contrato.');
+    }
+    if (error.code === '23514') {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'La recepción no cumple las restricciones de almacenamiento.');
+    }
+    throw error;
+  }
+  if (inserted.rows[0]) {
+    return { replayed: false, recepcion: { ...inserted.rows[0], horometro: Number(inserted.rows[0].horometro),
+      maquinaria_nombre: membership.rows[0].maquinaria_nombre } };
+  }
+  const byId = await database.query(
+    `SELECT r.id, r.contrato_id, r.maquinaria_id, cm.maquinaria_nombre, r.horometro, r.fotos,
+       r.fecha_recepcion::text FROM recepcion_maquinaria r JOIN contrato_maquinaria cm
+       ON cm.contrato_id = r.contrato_id AND cm.maquinaria_id = r.maquinaria_id WHERE r.id = $1`, [input.id],
+  );
+  if (byId.rows[0]) {
+    if (!sameReception(byId.rows[0], input)) {
+      throw new ApiError(409, 'RECEPTION_ID_CONFLICT', 'El identificador ya pertenece a otra recepción.');
+    }
+    return { replayed: true, recepcion: { ...byId.rows[0], horometro: Number(byId.rows[0].horometro) } };
+  }
+  throw new ApiError(409, 'RECEPTION_ALREADY_EXISTS', 'Esta maquinaria ya tiene una recepción registrada para el contrato.');
+}
+
+export async function findReceptions(database, contractId) {
+  const contract = await database.query('SELECT id FROM contrato WHERE id = $1', [contractId]);
+  if (!contract.rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
+  const { rows } = await database.query(
+    `SELECT r.id, r.contrato_id, r.maquinaria_id, cm.maquinaria_nombre, r.horometro, r.fotos,
+       r.fecha_recepcion::text FROM recepcion_maquinaria r JOIN contrato_maquinaria cm
+       ON cm.contrato_id = r.contrato_id AND cm.maquinaria_id = r.maquinaria_id
+     WHERE r.contrato_id = $1 ORDER BY r.fecha_recepcion DESC, r.id`, [contractId],
+  );
+  return rows.map((row) => ({ ...row, horometro: Number(row.horometro) }));
+}
+
 export async function savePayment(database, contractId, input) {
   return database.transaction(async (tx) => {
     // All payments for a contract serialize on its header. At READ COMMITTED the
@@ -470,6 +605,19 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
           [id],
         );
         return json(response, 200, rows);
+      }
+      if (ruta?.operacion === 'recepciones.crear') {
+        const { replayed, recepcion } = await saveReception(database,
+          validateReception(await readJson(request, MAX_RECEPTION_BODY_BYTES)));
+        response.setHeader('Location', `/api/contratos/${recepcion.contrato_id}/recepciones`);
+        return json(response, replayed ? 200 : 201, recepcion);
+      }
+      if (ruta?.operacion === 'recepciones.consultar') {
+        const [contractId] = ruta.parametros;
+        if (!UUID_PATTERN.test(contractId)) {
+          throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
+        }
+        return json(response, 200, { recepciones: await findReceptions(database, contractId.toLowerCase()) });
       }
 
       if (ruta?.operacion === 'contratos.crear') {

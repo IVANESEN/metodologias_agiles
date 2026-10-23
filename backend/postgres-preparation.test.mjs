@@ -38,7 +38,7 @@ test('Render prepara PostgreSQL sin revisión de Supabase y conserva evidencia d
       { schemaSql, seedsSql, dataApiReviewed: false }), { code: 'DATABASE_TLS_NOT_VERIFIED' });
     }
     const result = await initializePostgresDatabase(database, { schemaSql, seedsSql, dataApiReviewed: false });
-    assert.equal(result.createdTables.length, 7);
+    assert.equal(result.createdTables.length, 8);
     assert.equal(result.connection.privateNetwork, privateNetwork);
     assert.deepEqual(result.connection.tls, tls);
     assert.equal((await inspectPostgresDatabase(database)).dataApiPanelReviewRequired, false);
@@ -99,10 +99,12 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
   });
   await t.test('ejecuta scripts reales con ON DELETE y ON CONFLICT DO NOTHING; crea tablas privadas incluyendo autenticación', async () => {
     const result = await initializePostgresDatabase(database, reviewed);
-    assert.deepEqual(result.createdTables, ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion', 'token_recuperacion']);
+    assert.deepEqual(result.createdTables,
+      ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion', 'token_recuperacion', 'recepcion_maquinaria']);
     assert.equal(result.seeded, true);
     assert.deepEqual(result.tables.map(({ name, rowCount }) => [name, rowCount]), [
-      ['contrato', 0], ['contrato_maquinaria', 0], ['maquinaria', 2], ['pago', 0], ['sesion', 0], ['token_recuperacion', 0], ['usuario', 0],
+      ['contrato', 0], ['contrato_maquinaria', 0], ['maquinaria', 2], ['pago', 0],
+      ['recepcion_maquinaria', 0], ['sesion', 0], ['token_recuperacion', 0], ['usuario', 0],
     ]);
     assert.equal(result.connection.targetProjectVerified, false);
     assert.ok(!JSON.stringify(result).includes(secret));
@@ -129,6 +131,26 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
     await assert.rejects(embedded.query('DELETE FROM constructora_private.contrato WHERE id=$1', [contractId]), { code: '23001' });
     assert.equal((await embedded.query(`SELECT COUNT(*)::integer AS count FROM pg_indexes
       WHERE schemaname='constructora_private' AND tablename='pago' AND indexname='pago_contrato_idx'`)).rows[0].count, 1);
+  });
+  await t.test('recepción exige contrato-máquina, horómetro, 1 a 5 fotos y un solo registro por equipo', async () => {
+    const contractId = '00000000-0000-4000-8000-000000000001';
+    await embedded.query(`INSERT INTO constructora_private.contrato_maquinaria
+      (contrato_id, maquinaria_id, maquinaria_nombre, tarifa_diaria)
+      VALUES ($1, 1, 'Equipo pactado', 999)`, [contractId]);
+    const insert = (id, machineryId, hours, photos) => embedded.query(`INSERT INTO constructora_private.recepcion_maquinaria
+      (id, contrato_id, maquinaria_id, horometro, fotos) VALUES ($1,$2,$3,$4,$5::jsonb)
+      RETURNING fecha_recepcion`, [id, contractId, machineryId, hours, JSON.stringify(photos)]);
+    const receptionId = '00000000-0000-4000-8000-000000000010';
+    const { rows } = await insert(receptionId, 1, 900, ['data:image/png;base64,evidencia']);
+    assert.ok(Number.isFinite(new Date(rows[0].fecha_recepcion).getTime()));
+    await assert.rejects(insert('00000000-0000-4000-8000-000000000011', 1, 901, ['otra']), { code: '23505' });
+    await assert.rejects(insert('00000000-0000-4000-8000-000000000012', 2, 901, ['otra']), { code: '23503' });
+    await assert.rejects(insert('00000000-0000-4000-8000-000000000013', 1, -1, ['otra']), { code: '23514' });
+    await assert.rejects(insert('00000000-0000-4000-8000-000000000014', 1, 1, []), { code: '23514' });
+    await assert.rejects(insert('00000000-0000-4000-8000-000000000015', 1, 1, Array(6).fill('foto')), { code: '23514' });
+    assert.equal((await embedded.query(`SELECT COUNT(*)::integer AS count FROM pg_indexes
+      WHERE schemaname='constructora_private' AND tablename='recepcion_maquinaria'
+      AND indexname='recepcion_contrato_idx'`)).rows[0].count, 1);
   });
   await t.test('metadata usa text[] compatible con el parser real de pg para claves y roles de políticas', async () => {
     // PGlite decodes name[] natively; pg otherwise returns its unparsed text.
@@ -168,7 +190,7 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
   await t.test('validación de arranque lee tablas y permisos sin aplicar migraciones ni semillas', async () => {
     operations.length = 0;
     const inventory = await assertPostgresReady(database);
-    assert.equal(inventory.appTables.length, 7);
+    assert.equal(inventory.appTables.length, 8);
     assert.ok(inventory.appTables.every((table) => table.rlsEnabled && table.apiPrivileges.length === 0 && table.policies.length === 0));
     assertReadOnly(operations);
   });

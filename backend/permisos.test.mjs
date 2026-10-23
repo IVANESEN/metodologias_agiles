@@ -11,6 +11,7 @@ import { permisosParaRol } from './permisos.mjs';
 const compartidos = [
   'maquinaria.consultar', 'contratos.crear', 'contratos.consultar',
   'contratos.documento', 'contratos.pdf', 'contratos.firmar', 'alertas.consultar',
+  'recepciones.crear', 'recepciones.consultar',
 ];
 const exclusivos = ['cobros.consultar', 'pagos.registrar', 'gastos.aprobar', 'contratos.modificaciones.autorizar'];
 const ordenar = valores => [...valores].sort();
@@ -78,7 +79,7 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
   }
   function sinConsultasDeNegocio() {
     assert.equal(transacciones, 0, 'la denegación debe ocurrir antes de abrir una transacción de negocio');
-    assert.deepEqual(consultas.filter(sql => /\b(?:maquinaria|contrato|contrato_maquinaria|pago)\b/i.test(sql)), [],
+    assert.deepEqual(consultas.filter(sql => /\b(?:maquinaria|contrato|contrato_maquinaria|recepcion_maquinaria|pago)\b/i.test(sql)), [],
       'la denegación debe ocurrir antes de consultar o modificar datos de negocio');
   }
   function limpiarObservacion() { consultas.length = 0; transacciones = 0; }
@@ -113,7 +114,7 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
   });
 
   for (const [indice, rol] of ['residente', 'gerente'].entries()) {
-    await t.test(`${rol}: catálogo, reservas, crear/consultar contrato, documento, PDF, firma y alertas`, async () => {
+    await t.test(`${rol}: catálogo, reservas, contratos, recepción, documento, PDF, firma y alertas`, async () => {
       const cookie = cookies[rol];
       const catalogo = await solicitar('/api/maquinaria', { cookie });
       assert.equal(catalogo.status, 200);
@@ -124,8 +125,15 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
       const id = creado.body.id;
       contratos[rol] = id;
       assert.equal(creado.response.headers.get('location'), `/api/contratos/${id}`);
+      const recepcion = await solicitar('/api/recepciones', { cookie, body: {
+        id: randomUUID(), contrato_id: id, maquinaria_id: 1, horometro: 500 + indice,
+        fotos: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z5ZkAAAAASUVORK5CYII='],
+      } });
+      assert.equal(recepcion.status, 201);
+      assert.equal(recepcion.body.contrato_id, id);
       for (const path of [`/api/contratos/${id}`, `/api/contratos/${id}/documento`,
-        '/api/reservas/ocupadas?maquinaria_id=1', '/api/contratos/por-vencer?dias=7']) {
+        `/api/contratos/${id}/recepciones`, '/api/reservas/ocupadas?maquinaria_id=1',
+        '/api/contratos/por-vencer?dias=7']) {
         const result = await solicitar(path, { cookie });
         assert.equal(result.status, 200, path);
         sinCache(result);
@@ -255,10 +263,10 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
       `/api/contratos/${id}/%70agos`, '/api/cobros/', '/api//cobros', '/api/%63obros'];
     const metodosErroneos = [
       ['/api/cobros', 'POST'], ['/api/maquinaria', 'POST'], ['/api/reservas/ocupadas', 'POST'],
-      ['/api/contratos', 'GET'], ['/api/contratos/por-vencer', 'POST'],
+      ['/api/contratos', 'GET'], ['/api/contratos/por-vencer', 'POST'], ['/api/recepciones', 'GET'],
       [`/api/contratos/${id}/pagos`, 'GET'], [`/api/contratos/${id}/firma`, 'PUT'],
       [`/api/contratos/${id}/documento`, 'POST'], [`/api/contratos/${id}/pdf`, 'POST'],
-      [`/api/contratos/${id}`, 'DELETE'],
+      [`/api/contratos/${id}/recepciones`, 'POST'], [`/api/contratos/${id}`, 'DELETE'],
     ];
     for (const rol of ['residente', 'gerente']) {
       for (const path of desconocidas) {

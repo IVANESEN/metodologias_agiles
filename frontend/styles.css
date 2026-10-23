@@ -307,6 +307,47 @@ fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
   .cobro-heading { flex-direction: column; }
 }
 
+/* Sprint 3 - HU10: recepción de maquinaria */
+.recepcion { margin-top: 40px; padding-top: 32px; border-top: 1px solid var(--border); scroll-margin-top: 24px; }
+.recepcion-help { max-width: 760px; margin: 0 0 20px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.recepcion-layout { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.recepcion-form, .recepcion-evidencias { min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.recepcion-contract-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.recepcion-contract-search .field { margin-bottom: 0; }
+.recepcion-contract-search .retry-button { min-height: 40px; margin-top: 20px; }
+.recepcion-contract-status { min-height: 22px; margin: 12px 0 16px; color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
+.recepcion-form fieldset:disabled { opacity: .65; }
+.recepcion-form input[type="file"] { height: auto; padding: 10px; }
+.recepcion-previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.recepcion-previews:empty { display: none; }
+.recepcion-previews figure { position: relative; min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: var(--background); }
+.recepcion-previews img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.recepcion-previews button { position: absolute; right: 6px; bottom: 6px; background: var(--surface); }
+.recepcion-message { margin: 16px 0 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; line-height: 1.5; }
+.recepcion-message.is-success { border-color: #3FB95040; background: #3FB95012; color: var(--success); }
+.recepcion-message.is-error { border-color: #F8514960; background: #F8514912; color: var(--error); }
+.recepcion-evidencias-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.recepcion-evidencias-heading h3 { margin: 0; font-size: 16px; }
+.recepcion-status { min-height: 120px; margin: 0; }
+.recepcion-lista { display: grid; gap: 16px; }
+.recepcion-card { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); }
+.recepcion-card h4 { margin: 0 0 6px; font-size: 15px; overflow-wrap: anywhere; }
+.recepcion-card > p { margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.recepcion-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.recepcion-gallery img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+
+@media (max-width: 900px) {
+  .recepcion-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 480px) {
+  .recepcion { margin-top: 28px; padding-top: 24px; }
+  .recepcion-form, .recepcion-evidencias { padding: 16px; }
+  .recepcion-contract-search { grid-template-columns: minmax(0, 1fr); }
+  .recepcion-contract-search .retry-button { width: 100%; min-height: 44px; margin-top: 0; }
+  .recepcion-previews { grid-template-columns: minmax(0, 1fr); }
+  .recepcion-evidencias-heading { align-items: flex-start; flex-direction: column; }
+}
+
 /* HU1a login */
 .auth-page { width: min(440px, calc(100% - 40px)); margin: 10vh auto; padding: 28px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .auth-page h1 { font-size: 26px; margin: 8px 0 24px; }

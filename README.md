@@ -7,6 +7,10 @@ Sprint 1 también incluye reserva por fechas (HU8), formalización del contrato
 (HU6a), descarga de PDF (HU6b) y firma simulada desde el teléfono (HU7).
 Ver [SPRINT1_KEVIN.md](SPRINT1_KEVIN.md) para el alcance, API y pruebas de la firma.
 
+Sprint 3 incluye el registro de recepción de maquinaria en obra (HU10). El flujo,
+los límites de fotografías, permisos y casos de validación se documentan en
+[SPRINT3_MARIELA.md](SPRINT3_MARIELA.md).
+
 ## Ejecutar y probar
 
 Requiere Node.js 24.
@@ -170,6 +174,30 @@ Usar una base de pruebas y un período libre para todos los equipos.
 | Cambiar ciudad, cliente o fechas y luego quitar un equipo | Se conservan los datos escritos y se recalcula el total. |
 
 La revisión debe realizarla una persona distinta del autor (la estrategia del equipo propone a Mariela). Registrar caso, resultado esperado, resultado obtenido, responsable, fecha y evidencia. Para cerrar la historia también se requiere aceptación del Product Owner y verificación en el ambiente compartido.
+
+## Recepción de maquinaria en obra (HU10)
+
+La sección **Recepción** permite buscar un contrato por UUID, seleccionar únicamente
+una de sus máquinas, registrar una lectura entera del horómetro y adjuntar entre una
+y cinco fotografías JPEG, PNG o WebP. El navegador optimiza fotografías mayores de
+1 MB antes de enviarlas y el backend vuelve a validar formato, contenido y tamaño.
+
+- `POST /api/recepciones` requiere `recepciones.crear`. Guarda una sola recepción por
+  pareja contrato–máquina; un UUID de recepción repetido con los mismos datos se trata
+  como reintento y no duplica evidencias.
+- `GET /api/contratos/:id/recepciones` requiere `recepciones.consultar` y devuelve las
+  evidencias persistidas en orden descendente por fecha.
+- La clave foránea compuesta comprueba también en PostgreSQL que la maquinaria forme
+  parte del contrato. Las consultas usan parámetros y el esquema permanece privado.
+
+Las fotografías se almacenan como data URLs Base64 en JSONB para este alcance. Cada
+foto optimizada admite hasta 1 MB, el total decodificado hasta 5 MB y el cuerpo JSON
+hasta 7.1 MB. Para volúmenes de producción mayores conviene migrar los binarios a un
+almacenamiento de objetos privado y conservar en PostgreSQL solo metadatos y rutas.
+
+PGlite nuevo aplica `database/schema.sql` al iniciar. PostgreSQL remoto debe prepararse
+explícitamente con `db:inspect` y, tras revisar el inventario, `db:init -- --existing-reviewed --schema-only`.
+No se ejecutan migraciones remotas durante las pruebas automatizadas.
 
 ## Cobros y registro de pagos
 

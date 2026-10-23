@@ -6,10 +6,10 @@ import { webcrypto } from 'node:crypto';
 import * as signatureData from '../frontend/firma-datos.mjs';
 
 const html = await readFile(new URL('../frontend/index.html', import.meta.url), 'utf8');
-const sources = Object.fromEntries(await Promise.all(['sesion.js', 'app.js', 'alertas.js', 'cobros.mjs', 'firma.js'].map(async file => [file,
+const sources = Object.fromEntries(await Promise.all(['sesion.js', 'app.js', 'alertas.js', 'cobros.mjs', 'firma.js', 'recepcion.js'].map(async file => [file,
   (await readFile(new URL(`../frontend/${file}`, import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, ''),
 ])));
-const commonPermissions = ['maquinaria.consultar', 'contratos.crear', 'contratos.consultar', 'contratos.documento', 'contratos.pdf', 'contratos.firmar', 'alertas.consultar'];
+const commonPermissions = ['maquinaria.consultar', 'contratos.crear', 'contratos.consultar', 'contratos.documento', 'contratos.pdf', 'contratos.firmar', 'alertas.consultar', 'recepciones.crear', 'recepciones.consultar'];
 const managerPermissions = [...commonPermissions, 'cobros.consultar', 'pagos.registrar', 'gastos.aprobar', 'contratos.modificaciones.autorizar'];
 const equipment = { id: 1, nombre: 'Excavadora', tipo: 'Excavadora', descripcion: 'Equipo de obra', ubicacion: null, tarifa_diaria: 450, disponible: true };
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -121,7 +121,7 @@ function startPage({ permisos = commonPermissions, role = 'residente', hash = ''
     Object.assign(context, await evaluate('sesion.js', 'return {sessionReady, hasPermission, requirePermission, showPermissionNotice};'));
     Object.assign(context, await evaluate('firma.js', 'return {createSignaturePanel};'));
     Object.assign(context, await evaluate('cobros.mjs', 'return {createCobrosPanel};'));
-    await Promise.all([evaluate('app.js'), evaluate('alertas.js')]);
+    await Promise.all([evaluate('app.js'), evaluate('alertas.js'), evaluate('recepcion.js')]);
     await turn();
   })();
   return { document, calls, redirects, intervals, context, location, events, ready,
@@ -146,6 +146,7 @@ test('HU2 UI: residente oculta Cobros, no hace su solicitud y corrige enlaces di
   await page.ready;
   assert.equal(page.document.querySelector('main').hidden, false);
   assert.equal(page.document.getElementById('cobros').hidden, true);
+  assert.equal(page.document.getElementById('recepcion').hidden, false);
   assert.equal(page.document.querySelectorAll('[data-permission]').find(node => node.attributes.href === '#cobros').hidden, true);
   assert.equal(page.calls.some(call => call.path === '/api/cobros'), false);
   assert.ok(page.calls.some(call => call.path.startsWith('/api/maquinaria')));
@@ -166,6 +167,7 @@ test('HU2 UI: permisos del servidor controlan vistas aunque el campo rol diga ge
   assert.equal(page.document.getElementById('signature-form').hidden, true);
   assert.equal(page.document.getElementById('alertas').hidden, true);
   assert.equal(page.document.getElementById('cobros').hidden, true);
+  assert.equal(page.document.getElementById('recepcion').hidden, true);
   assert.ok(page.calls.slice(1).every(call => call.path.startsWith('/api/maquinaria')));
   assert.equal(page.intervals.length, 0);
   assert.ok(page.document.getElementById('equipment-grid').querySelector('button').hidden);

@@ -4,14 +4,14 @@ import { assertPostgresReady } from './postgres-preparation.mjs';
 let database;
 let server;
 try {
-  if (!process.env.DATABASE_URL || !process.env.SUPABASE_PROJECT_REF) {
-    throw new DatabaseConfigurationError('SUPABASE_NOT_CONFIGURED',
-      'Configura DATABASE_URL y SUPABASE_PROJECT_REF en .env para verificar Supabase. Esta comprobación nunca usa PGlite.');
+  if (!process.env.DATABASE_URL) {
+    throw new DatabaseConfigurationError('DATABASE_URL_REQUIRED',
+      'Configura DATABASE_URL en .env para verificar PostgreSQL. Esta comprobación nunca usa PGlite.');
   }
   const { createServer } = await import('./app.mjs');
   database = await createDatabase();
   const evidence = await database.verifyConnection();
-  if (!evidence.targetProjectVerified) {
+  if (process.env.SUPABASE_PROJECT_REF && !evidence.targetProjectVerified) {
     throw new DatabaseConfigurationError('WRONG_SUPABASE_TARGET', 'No se pudo confirmar el proyecto de Supabase configurado.');
   }
   await assertPostgresReady(database);
@@ -39,7 +39,7 @@ try {
     read: { endpoint: '/api/maquinaria', httpStatus: machinery.status, rowCount: rows.length },
   }, null, 2));
 } catch (error) {
-  console.error(`Verificación de Supabase incompleta. ${safeDatabaseError(error)}`);
+  console.error(`Verificación de PostgreSQL incompleta. ${safeDatabaseError(error)}`);
   process.exitCode = 1;
 } finally {
   if (server?.listening) {

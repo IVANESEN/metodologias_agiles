@@ -82,9 +82,163 @@ jobs:
       - name: Ejecutar las pruebas reales del equipo
         run: npm test
 
+  # Solo se ejecuta en un push a main (incluido el merge de un PR) y unicamente
+  # si build y test terminaron en success. Los PR y otras ramas no publican.
+  deploy:
+    name: Despliegue a Render
+    needs: [build, test]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build.result == 'success' && needs.test.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ steps.service.outputs.app_url }}
+    # Un solo despliegue a la vez; los pendientes esperan, no se cancelan a medias.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      RENDER_API: https://api.render.com/v1
+    steps:
+      - name: Comprobar que los secretos estan configurados
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          missing=0
+          for name in RENDER_API_KEY RENDER_SERVICE_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Falta el secreto de repositorio $name (Settings > Secrets and variables > Actions)."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # Si entro otro push mientras esperaba, el commit mas nuevo desplegara.
+      - name: Confirmar que este commit sigue siendo la punta de main
+        id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [[ "$latest" == "$GITHUB_SHA" ]]; then
+            echo 'stale=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'stale=true' >> "$GITHUB_OUTPUT"
+            echo "::notice::main avanzo a $latest; se omite el despliegue de $GITHUB_SHA."
+            echo "Despliegue omitido: main ya tiene un commit mas reciente ($latest)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Obtener la URL del servicio configurado
+        id: service
+        if: ${{ steps.fresh.outputs.stale == 'false' }}
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          curl -fsS -m 30 \
+            -H "Authorization: Bearer $RENDER_API_KEY" -H 'Accept: application/json' \
+            "$RENDER_API/services/$RENDER_SERVICE_ID" > service.json
+          app_url=$(jq -er '.serviceDetails.url | select(type == "string")' service.json)
+          if [[ ! "$app_url" =~ ^https://[a-z0-9-]+\.onrender\.com/?$ ]]; then
+            echo '::error::Render no devolvio una URL HTTPS valida de onrender.com para el servicio.'
+            exit 1
+          fi
+          printf 'app_url=%s\n' "${app_url%/}" >> "$GITHUB_OUTPUT"
+
+      - name: Solicitar el despliegue del commit probado
+        id: trigger
+        if: ${{ steps.fresh.outputs.stale == 'false' }}
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o response.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H 'Accept: application/json' -H 'Content-Type: application/json' \
+            -d "{\"commitId\":\"$GITHUB_SHA\"}" \
+            "$RENDER_API/services/$RENDER_SERVICE_ID/deploys")
+          if [[ "$status" != '201' ]]; then
+            echo "::error::Render rechazo el despliegue (HTTP $status): $(jq -r '.message // "sin detalle"' response.json 2>/dev/null)"
+            exit 1
+          fi
+          deploy_id=$(jq -r '.id' response.json)
+          echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+          echo "Despliegue $deploy_id creado para el commit $GITHUB_SHA."
+
+      # Aceptar la peticion no demuestra que la app este publicada: se espera
+      # a que Render marque el deploy como live y se compara el commit.
+      - name: Esperar a que Render publique el despliegue
+        if: ${{ steps.fresh.outputs.stale == 'false' }}
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          DEPLOY_ID: ${{ steps.trigger.outputs.deploy_id }}
+          APP_URL: ${{ steps.service.outputs.app_url }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            curl -fsS \
+              -H "Authorization: Bearer $RENDER_API_KEY" -H 'Accept: application/json' \
+              "$RENDER_API/services/$RENDER_SERVICE_ID/deploys/$DEPLOY_ID" > deploy.json
+            state=$(jq -r '.status' deploy.json)
+            published=$(jq -r '.commit.id // ""' deploy.json)
+            echo "[$attempt/80] estado=$state commit=${published:0:7}"
+            case "$state" in
+              live)
+                if [[ "$published" != "$GITHUB_SHA" ]]; then
+                  echo "::error::Render publico $published, no el commit probado $GITHUB_SHA."
+                  exit 1
+                fi
+                {
+                  echo '### Despliegue publicado'
+                  printf -- '- Deploy: `%s`\n' "$DEPLOY_ID"
+                  printf -- '- Commit: `%s`\n' "$GITHUB_SHA"
+                  printf -- '- URL: %s\n' "$APP_URL"
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 0 ;;
+              build_failed|update_failed|pre_deploy_failed|canceled|deactivated)
+                echo "::error::El despliegue $DEPLOY_ID termino en estado $state."
+                exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo '::error::Render no publico el despliegue en 20 minutos.'
+          exit 1
+
+      - name: Verificar la aplicacion publicada
+        if: ${{ steps.fresh.outputs.stale == 'false' }}
+        env:
+          APP_URL: ${{ steps.service.outputs.app_url }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            if curl -fsS -m 20 "$APP_URL/api/health" > health.json; then
+              if [[ "$(jq -r '.status' health.json)" == 'ok' ]]; then
+                reported=$(jq -r '.commit // ""' health.json)
+                if [[ -z "$reported" ]]; then
+                  echo '::warning::/api/health no informa el commit; la verificacion descansa en la API de Render.'
+                  exit 0
+                fi
+                if [[ "$reported" == "$GITHUB_SHA" ]]; then
+                  echo "Aplicacion saludable y sirviendo el commit $GITHUB_SHA."
+                  exit 0
+                fi
+                echo "[$attempt/12] la app aun reporta el commit ${reported:0:7}"
+              fi
+            fi
+            sleep 10
+          done
+          echo "::error::$APP_URL/api/health no confirmo el commit $GITHUB_SHA."
+          exit 1
+
   report:
     name: Resultado CI
-    needs: [build, test]
+    needs: [build, test, deploy]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -93,6 +247,7 @@ jobs:
         env:
           BUILD_RESULT: ${{ needs.build.result }}
           TEST_RESULT: ${{ needs.test.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
         run: |
           {
             echo '## Resultado del pipeline'
@@ -100,11 +255,19 @@ jobs:
             echo '| --- | --- |'
             echo "| Build | $BUILD_RESULT |"
             echo "| Pruebas | $TEST_RESULT |"
+            echo "| Despliegue | $DEPLOY_RESULT |"
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [[ "$BUILD_RESULT" != 'success' || "$TEST_RESULT" != 'success' ]]; then
             echo 'CI en rojo: revisar el job fallido antes de integrar.' >> "$GITHUB_STEP_SUMMARY"
             echo '::error::Build o pruebas no finalizaron correctamente.'
+            exit 1
+          fi
+
+          # skipped es lo esperado en PR y ramas distintas de main.
+          if [[ "$DEPLOY_RESULT" != 'success' && "$DEPLOY_RESULT" != 'skipped' ]]; then
+            echo 'El despliegue fallo o fue cancelado: revisar el job deploy.' >> "$GITHUB_STEP_SUMMARY"
+            echo '::error::El despliegue no finalizo correctamente.'
             exit 1
           fi
 

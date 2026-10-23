@@ -60,6 +60,17 @@ test('API de alquiler con PostgreSQL embebido y persistencia real', async (t) =>
     const health = await request('/api/health');
     assert.equal(health.response.status, 200);
     assert.deepEqual(health.body, { status: 'ok', database: 'pglite' });
+    const previousCommit = process.env.RENDER_GIT_COMMIT;
+    process.env.RENDER_GIT_COMMIT = '0123456789abcdef0123456789abcdef01234567';
+    try {
+      const versioned = await request('/api/health');
+      assert.deepEqual(versioned.body, {
+        status: 'ok', database: 'pglite', commit: '0123456789abcdef0123456789abcdef01234567',
+      });
+    } finally {
+      if (previousCommit === undefined) delete process.env.RENDER_GIT_COMMIT;
+      else process.env.RENDER_GIT_COMMIT = previousCommit;
+    }
     const catalog = await request('/api/maquinaria');
     assert.equal(catalog.response.status, 200);
     assert.equal(catalog.body.length, 2);
@@ -109,6 +120,7 @@ test('API de alquiler con PostgreSQL embebido y persistencia real', async (t) =>
       id: 'uuid', maquinaria_id: 1, maquinaria_nombre: 'CAT 336', cliente: 'Cliente de prueba', ciudad: 'San Salvador',
       fecha_inicio: valid.fecha_inicio, fecha_fin: valid.fecha_fin,
       dias: 3, tarifa_diaria: 450, total: 1350, estado: 'CONFIRMADO',
+      total_pagado: 0, saldo_pendiente: 1350, estado_pago: 'PENDIENTE',
       operador: 'Operador de prueba', operador_documento: null, seguro: 'TODO_RIESGO',
       forma_pago: 'TRANSFERENCIA', condiciones_especiales: null,
       firma: null, firmado_en: null,

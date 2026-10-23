@@ -1,0 +1,23 @@
+/* Sección Alertas (HU4a). Solo usa las variables de styles.css, sin modificarlo. */
+.alertas { margin-top: 32px; scroll-margin-top: 24px; }
+.alertas-field { max-width: 280px; }
+.alertas-lista .catalogue-status { min-height: 120px; }
+.alertas-resumen { margin: 0 0 12px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.alertas-items { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.alerta-item { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.alerta-cabecera { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.alerta-cliente { min-width: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.alerta-plazo { flex-shrink: 0; padding: 2px 10px; border: 1px solid var(--warning); border-radius: 999px; color: var(--warning); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.alerta-plazo.es-hoy { border-color: var(--error); color: var(--error); }
+.alerta-item p { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* Pestaña activa: "Alertas" se resalta y "Catálogo" deja de estarlo (su
+   resaltado por defecto viene de .nav-tab:first-child en styles.css). */
+body:has(#alertas:target) .nav-tab[href="#catalogo"] { color: var(--muted); border-bottom-color: transparent; }
+body:has(#alertas:target) .nav-tab[href="#alertas"] { color: var(--text); border-bottom-color: var(--active); }
+
+@media (max-width: 480px) {
+  .alertas { margin-top: 24px; }
+  .alertas-field { max-width: none; }
+  .alerta-item { padding: 12px; }
+}

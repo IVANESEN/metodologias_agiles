@@ -12,6 +12,41 @@ const [schemaSql, seedsSql] = await Promise.all([
 ]);
 const reviewed = { schemaSql, seedsSql, dataApiReviewed: true };
 
+test('Render prepara PostgreSQL sin revisión de Supabase y conserva evidencia del transporte', async (t) => {
+  const embedded = new PGlite();
+  t.after(() => embedded.close());
+  for (const privateNetwork of [false, true]) {
+    const wrap = (connection) => ({
+      schema: 'constructora_private',
+      requiresDataApiReview: false,
+      query: (sql, params) => connection.query(sql, params),
+      exec: (sql) => connection.exec(sql),
+    });
+    const tls = privateNetwork
+      ? { encrypted: false, authorized: false, protocol: null }
+      : { encrypted: true, authorized: true, protocol: 'TLSv1.3' };
+    const database = {
+      ...wrap(embedded), renderInternal: privateNetwork,
+      verifyConnection: async () => ({ privateNetwork, tls }),
+      transaction: (callback) => embedded.transaction((tx) => callback(wrap(tx))),
+    };
+    if (privateNetwork) {
+      await assert.rejects(initializePostgresDatabase({ ...database, renderInternal: false },
+        { schemaSql, seedsSql, dataApiReviewed: false }), { code: 'DATABASE_TLS_NOT_VERIFIED' });
+      await assert.rejects(initializePostgresDatabase({ ...database,
+        verifyConnection: async () => ({ privateNetwork: false, tls }) },
+      { schemaSql, seedsSql, dataApiReviewed: false }), { code: 'DATABASE_TLS_NOT_VERIFIED' });
+    }
+    const result = await initializePostgresDatabase(database, { schemaSql, seedsSql, dataApiReviewed: false });
+    assert.equal(result.createdTables.length, 7);
+    assert.equal(result.connection.privateNetwork, privateNetwork);
+    assert.deepEqual(result.connection.tls, tls);
+    assert.equal((await inspectPostgresDatabase(database)).dataApiPanelReviewRequired, false);
+    await assertPostgresReady(database);
+    await embedded.exec('DROP SCHEMA constructora_private CASCADE');
+  }
+});
+
 function rejectsCode(promise, code) {
   return assert.rejects(promise, (error) => error instanceof PostgresPreparationError && error.code === code);
 }
@@ -62,16 +97,38 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
     assert.ok(!JSON.stringify(inventory).includes('private-login'));
     operations.length = 0;
   });
-  await t.test('ejecuta scripts reales con ON DELETE y ON CONFLICT DO NOTHING; crea 3 tablas privadas', async () => {
+  await t.test('ejecuta scripts reales con ON DELETE y ON CONFLICT DO NOTHING; crea tablas privadas incluyendo autenticación', async () => {
     const result = await initializePostgresDatabase(database, reviewed);
-    assert.deepEqual(result.createdTables, ['maquinaria', 'contrato', 'contrato_maquinaria']);
+    assert.deepEqual(result.createdTables, ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion', 'token_recuperacion']);
     assert.equal(result.seeded, true);
     assert.deepEqual(result.tables.map(({ name, rowCount }) => [name, rowCount]), [
-      ['contrato', 0], ['contrato_maquinaria', 0], ['maquinaria', 2],
+      ['contrato', 0], ['contrato_maquinaria', 0], ['maquinaria', 2], ['pago', 0], ['sesion', 0], ['token_recuperacion', 0], ['usuario', 0],
     ]);
     assert.equal(result.connection.targetProjectVerified, false);
     assert.ok(!JSON.stringify(result).includes(secret));
     assert.ok(!JSON.stringify(result).includes('private-login'));
+  });
+  await t.test('pagos conservan importes exactos, identidad única, fecha y contrato protegido', async () => {
+    const contractId = '00000000-0000-4000-8000-000000000001';
+    const paymentId = '00000000-0000-4000-8000-000000000002';
+    await embedded.query(`INSERT INTO constructora_private.contrato
+      (id,maquinaria_id,maquinaria_nombre,cliente,fecha_inicio,fecha_fin,dias,tarifa_diaria,total)
+      VALUES ($1,1,'Equipo pactado','Cliente de prueba','2027-01-01','2027-01-02',2,999,1998)`, [contractId]);
+    const insertPayment = (id, contratoId, monto) => embedded.query(`INSERT INTO constructora_private.pago
+      (id, contrato_id, monto) VALUES ($1,$2,$3) RETURNING monto::text, creado_en`, [id, contratoId, monto]);
+    const { rows } = await insertPayment(paymentId, contractId, '19.98');
+    assert.equal(rows[0].monto, '19.98');
+    assert.ok(Number.isFinite(new Date(rows[0].creado_en).getTime()));
+    await assert.rejects(insertPayment(paymentId, contractId, '19.98'), { code: '23505' });
+    for (const amount of ['0', '-1']) {
+      await assert.rejects(insertPayment('00000000-0000-4000-8000-000000000003', contractId, amount), { code: '23514' });
+    }
+    await assert.rejects(insertPayment('00000000-0000-4000-8000-000000000003', null, '1'), { code: '23502' });
+    await assert.rejects(insertPayment('00000000-0000-4000-8000-000000000003',
+      '00000000-0000-4000-8000-000000000099', '1'), { code: '23503' });
+    await assert.rejects(embedded.query('DELETE FROM constructora_private.contrato WHERE id=$1', [contractId]), { code: '23001' });
+    assert.equal((await embedded.query(`SELECT COUNT(*)::integer AS count FROM pg_indexes
+      WHERE schemaname='constructora_private' AND tablename='pago' AND indexname='pago_contrato_idx'`)).rows[0].count, 1);
   });
   await t.test('metadata usa text[] compatible con el parser real de pg para claves y roles de políticas', async () => {
     // PGlite decodes name[] natively; pg otherwise returns its unparsed text.
@@ -111,7 +168,7 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
   await t.test('validación de arranque lee tablas y permisos sin aplicar migraciones ni semillas', async () => {
     operations.length = 0;
     const inventory = await assertPostgresReady(database);
-    assert.equal(inventory.appTables.length, 3);
+    assert.equal(inventory.appTables.length, 7);
     assert.ok(inventory.appTables.every((table) => table.rlsEnabled && table.apiPrivileges.length === 0 && table.policies.length === 0));
     assertReadOnly(operations);
   });
@@ -154,6 +211,38 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
     await embedded.exec('DROP POLICY existing_policy ON constructora_private.maquinaria; GRANT SELECT ON constructora_private.maquinaria TO unknown_reader;');
     await rejectsCode(initializePostgresDatabase(database, { ...reviewed, existingReviewed: true }), 'UNSAFE_EXISTING_DATABASE_ACCESS');
     await embedded.exec('REVOKE SELECT ON constructora_private.maquinaria FROM unknown_reader;');
+  });
+  await t.test('pagos también rechaza acceso de Data API y no cambia permisos sin revisión', async () => {
+    await embedded.exec('GRANT SELECT ON constructora_private.pago TO anon;');
+    operations.length = 0;
+    await rejectsCode(assertPostgresReady(database), 'UNSAFE_EXISTING_DATABASE_ACCESS');
+    await rejectsCode(initializePostgresDatabase(database, { ...reviewed, existingReviewed: true }), 'UNSAFE_EXISTING_DATABASE_ACCESS');
+    assert.ok(!operations.some(({ kind }) => kind === 'exec'));
+    await embedded.exec('REVOKE SELECT ON constructora_private.pago FROM anon;');
+  });
+  await t.test('pagos exige restricciones exactas antes de aceptar o migrar una tabla existente', async () => {
+    const cases = [
+      ['ALTER TABLE constructora_private.pago ALTER COLUMN contrato_id DROP NOT NULL;',
+        'ALTER TABLE constructora_private.pago ALTER COLUMN contrato_id SET NOT NULL;'],
+      ['ALTER TABLE constructora_private.pago ALTER COLUMN creado_en DROP DEFAULT;',
+        'ALTER TABLE constructora_private.pago ALTER COLUMN creado_en SET DEFAULT CURRENT_TIMESTAMP;'],
+      ['ALTER TABLE constructora_private.pago DROP CONSTRAINT pago_monto_check; ALTER TABLE constructora_private.pago ADD CONSTRAINT pago_monto_check CHECK (monto >= 0);',
+        'ALTER TABLE constructora_private.pago DROP CONSTRAINT pago_monto_check; ALTER TABLE constructora_private.pago ADD CONSTRAINT pago_monto_check CHECK (monto > 0);'],
+      ['ALTER TABLE constructora_private.pago DROP CONSTRAINT pago_monto_check; ALTER TABLE constructora_private.pago ADD CONSTRAINT pago_monto_check CHECK (monto > 0) NOT VALID;',
+        'ALTER TABLE constructora_private.pago VALIDATE CONSTRAINT pago_monto_check;'],
+      ['ALTER TABLE constructora_private.pago DROP CONSTRAINT pago_contrato_id_fkey; ALTER TABLE constructora_private.pago ADD CONSTRAINT pago_contrato_id_fkey FOREIGN KEY (contrato_id) REFERENCES constructora_private.contrato(id) ON DELETE CASCADE;',
+        'ALTER TABLE constructora_private.pago DROP CONSTRAINT pago_contrato_id_fkey; ALTER TABLE constructora_private.pago ADD CONSTRAINT pago_contrato_id_fkey FOREIGN KEY (contrato_id) REFERENCES constructora_private.contrato(id) ON DELETE RESTRICT;'],
+    ];
+    for (const [change, restore] of cases) {
+      await embedded.exec(change);
+      try {
+        operations.length = 0;
+        await rejectsCode(assertPostgresReady(database), 'INCOMPATIBLE_EXISTING_TABLES');
+        await rejectsCode(initializePostgresDatabase(database, { ...reviewed, existingReviewed: true }), 'INCOMPATIBLE_EXISTING_TABLES');
+        assertReadOnly(operations);
+      } finally { await embedded.exec(restore); }
+    }
+    await assertPostgresReady(database);
   });
   await t.test('esquema con objetos ajenos aborta sin quitarles permisos', async () => {
     await embedded.exec('CREATE VIEW constructora_private.unrelated_view AS SELECT 1 AS value;');
@@ -211,6 +300,8 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
     await rejectsCode(assertPostgresReady(database), 'DATABASE_SCHEMA_NOT_READY');
   });
   await t.test('actualización revisada conserva contratos históricos y sólo rellena detalle ausente', async () => {
+    // Reproduce the pre-payment schema; no historical payment can be inferred.
+    await embedded.exec('DROP TABLE constructora_private.pago;');
     await embedded.exec(`INSERT INTO constructora_private.maquinaria
       (id,nombre,tipo,descripcion,tarifa_diaria,disponible) VALUES (77,'Nombre nuevo','Excavadora','Datos propios',1100,true);
       INSERT INTO constructora_private.contrato
@@ -218,14 +309,19 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
       VALUES ('00000000-0000-4000-8000-000000000077',77,'Nombre histórico','Cliente histórico','2027-01-01','2027-01-02',2,999,1998);`);
     const result = await initializePostgresDatabase(database, { ...reviewed, existingReviewed: true });
     assert.equal(result.seeded, false);
-    assert.deepEqual(result.createdTables, []);
+    assert.deepEqual(result.createdTables, ['pago']);
+    assert.equal((await embedded.query('SELECT COUNT(*)::integer AS count FROM constructora_private.pago')).rows[0].count, 0);
     const historical = (await embedded.query(`SELECT maquinaria_nombre, tarifa_diaria::text, total::text
       FROM constructora_private.contrato`)).rows[0];
     assert.deepEqual(historical, { maquinaria_nombre: 'Nombre histórico', tarifa_diaria: '999.00', total: '1998.00' });
     assert.deepEqual((await embedded.query(`SELECT maquinaria_nombre, tarifa_diaria::text
       FROM constructora_private.contrato_maquinaria`)).rows, [{ maquinaria_nombre: 'Nombre histórico', tarifa_diaria: '999.00' }]);
-    await initializePostgresDatabase(database, { ...reviewed, existingReviewed: true });
+    await embedded.exec(`INSERT INTO constructora_private.pago (id, contrato_id, monto)
+      VALUES ('00000000-0000-4000-8000-000000000078','00000000-0000-4000-8000-000000000077',98);`);
+    const repeated = await initializePostgresDatabase(database, { ...reviewed, existingReviewed: true });
+    assert.deepEqual(repeated.createdTables, []);
     assert.equal((await embedded.query('SELECT COUNT(*)::integer AS count FROM constructora_private.contrato_maquinaria')).rows[0].count, 1);
+    assert.deepEqual((await embedded.query('SELECT monto::text FROM constructora_private.pago')).rows, [{ monto: '98.00' }]);
   });
   await t.test('scripts destructivos se rechazan antes de realizar cualquier consulta', async () => {
     operations.length = 0;

@@ -73,6 +73,7 @@ ALTER TABLE contrato ADD COLUMN IF NOT EXISTS condiciones_especiales TEXT
 ALTER TABLE contrato ADD COLUMN IF NOT EXISTS firma JSONB;
 ALTER TABLE contrato ADD COLUMN IF NOT EXISTS firmado_en TIMESTAMPTZ;
 
+<<<<<<< HEAD
 -- Sprint 2 HU5: ficha técnica de maquinaria
 ALTER TABLE maquinaria
 ADD COLUMN IF NOT EXISTS horometro INTEGER
@@ -83,3 +84,46 @@ ADD COLUMN IF NOT EXISTS ficha_tecnica TEXT;
 
 ALTER TABLE maquinaria
 ADD COLUMN IF NOT EXISTS foto_url TEXT;
+=======
+-- Cobros: each confirmed payment is recorded once. Balance and payment status
+-- are derived from the contract total and these entries, independently of estado.
+-- Historical contracts receive no invented payments when this table is added.
+CREATE TABLE IF NOT EXISTS pago (
+  id UUID PRIMARY KEY,
+  contrato_id UUID NOT NULL REFERENCES contrato(id) ON DELETE RESTRICT,
+  monto NUMERIC(14, 2) NOT NULL CHECK (monto > 0),
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS pago_contrato_idx ON pago (contrato_id);
+
+-- HU1a: usuarios y sesiones privadas; sin credenciales de demostración.
+CREATE TABLE IF NOT EXISTS usuario (
+  id UUID PRIMARY KEY,
+  correo VARCHAR(254) UNIQUE NOT NULL CHECK (correo = lower(trim(correo))),
+  nombre VARCHAR(160) NOT NULL CHECK (length(trim(nombre)) > 0),
+  clave_hash TEXT NOT NULL,
+  rol VARCHAR(20) NOT NULL DEFAULT 'residente' CHECK (rol IN ('residente','gerente')),
+  activo BOOLEAN NOT NULL DEFAULT TRUE,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS sesion (
+  id UUID PRIMARY KEY,
+  usuario_id UUID NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  token_hash TEXT UNIQUE NOT NULL,
+  expira_en TIMESTAMPTZ NOT NULL,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS sesion_usuario_idx ON sesion (usuario_id);
+
+-- HU1b: solo se almacena el hash del enlace temporal de recuperación.
+CREATE TABLE IF NOT EXISTS token_recuperacion (
+  id UUID PRIMARY KEY,
+  usuario_id UUID NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  token_hash TEXT UNIQUE NOT NULL,
+  expira_en TIMESTAMPTZ NOT NULL,
+  usado_en TIMESTAMPTZ,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS token_recuperacion_usuario_idx ON token_recuperacion (usuario_id);
+>>>>>>> origin/main

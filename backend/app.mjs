@@ -5,7 +5,11 @@ import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mjs';
 import { buildContractPdf } from './contrato-pdf.mjs';
+import { hoyElSalvador, validarDias, buscarPorVencer } from './contratos-por-vencer.mjs';
 import { normalizeSignature } from '../frontend/firma-datos.mjs';
+import { AuthError, handleAuthRoutes, guardSession, guardPermission, checkRequestOrigin } from './auth.mjs';
+import { handleRecoveryRoutes } from './recuperacion.mjs';
+import { resolverRutaProtegida } from './permisos.mjs';
 
 const defaultFrontendDir = fileURLToPath(new URL('../frontend/', import.meta.url));
 const MAX_BODY_BYTES = 16_384;
@@ -213,12 +217,92 @@ async function contractWithMachinery(database, row) {
      FROM contrato_maquinaria WHERE contrato_id = $1 ORDER BY maquinaria_id`,
     [row.id, row.dias],
   );
+  const { total_pagado, saldo_pendiente, estado_pago } = await contractAccount(database, row.id);
   return {
     ...row, dias: Number(row.dias), tarifa_diaria: Number(row.tarifa_diaria), total: Number(row.total),
+    total_pagado, saldo_pendiente, estado_pago,
     maquinarias: rows.map((machine) => ({
       ...machine, tarifa_diaria: Number(machine.tarifa_diaria), total: Number(machine.total),
     })),
   };
+}
+
+// Payment status is derived from the ledger, independently of operational estado.
+// PostgreSQL numeric arithmetic keeps the balance exact without duplicate state.
+const ACCOUNT_QUERY = `SELECT c.id, c.cliente, c.total, c.estado,
+  c.fecha_inicio::text, c.fecha_fin::text,
+  COALESCE(SUM(p.monto), 0) AS total_pagado,
+  GREATEST(c.total - COALESCE(SUM(p.monto), 0), 0) AS saldo_pendiente,
+  CASE WHEN c.total > COALESCE(SUM(p.monto), 0) THEN 'PENDIENTE' ELSE 'PAGADO' END AS estado_pago
+  FROM contrato c LEFT JOIN pago p ON p.contrato_id = c.id`;
+
+function accountNumbers(row) {
+  return { ...row, total: Number(row.total), total_pagado: Number(row.total_pagado),
+    saldo_pendiente: Number(row.saldo_pendiente) };
+}
+
+async function contractAccount(database, id) {
+  const { rows } = await database.query(`${ACCOUNT_QUERY} WHERE c.id = $1 GROUP BY c.id`, [id]);
+  return accountNumbers(rows[0]);
+}
+
+export async function findPendingAccounts(database) {
+  const { rows } = await database.query(`${ACCOUNT_QUERY}
+    GROUP BY c.id HAVING c.total > COALESCE(SUM(p.monto), 0) ORDER BY c.creado_en, c.id`);
+  return rows.map(accountNumbers);
+}
+
+export function validatePayment(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos del pago.');
+  }
+  const amount = ['string', 'number'].includes(typeof body.monto) ? String(body.monto).trim() : '';
+  const fields = {};
+  if (!/^\d{1,12}(?:\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) {
+    fields.monto = 'Ingresa un monto mayor que cero, con un máximo de dos decimales y 12 dígitos enteros.';
+  }
+  if (body.id !== undefined && (typeof body.id !== 'string' || !UUID_PATTERN.test(body.id))) {
+    fields.id = 'El identificador del pago no es válido.';
+  }
+  if (Object.keys(fields).length) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos del pago.', fields);
+  }
+  const [whole, decimals = ''] = amount.split('.');
+  return { id: body.id?.toLowerCase() || randomUUID(), monto: `${Number(whole)}.${decimals.padEnd(2, '0')}` };
+}
+
+export async function savePayment(database, contractId, input) {
+  return database.transaction(async (tx) => {
+    // All payments for a contract serialize on its header. At READ COMMITTED the
+    // subsequent aggregate sees the previous writer's commit before accepting.
+    const locked = await tx.query('SELECT id FROM contrato WHERE id = $1 FOR UPDATE', [contractId]);
+    if (!locked.rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
+    const existing = await tx.query(
+      'SELECT id, contrato_id, monto, creado_en::text FROM pago WHERE id = $1', [input.id],
+    );
+    if (existing.rows[0]) {
+      const payment = existing.rows[0];
+      if (payment.contrato_id !== locked.rows[0].id || Number(payment.monto) !== Number(input.monto)) {
+        throw new ApiError(409, 'PAYMENT_ID_CONFLICT', 'El identificador ya pertenece a otro pago.');
+      }
+      return { replayed: true, pago: { ...payment, monto: Number(payment.monto) },
+        contrato: await contractAccount(tx, contractId) };
+    }
+    const account = await contractAccount(tx, contractId);
+    if (Number(input.monto) > account.saldo_pendiente) {
+      throw new ApiError(409, 'PAYMENT_EXCEEDS_BALANCE', 'El pago supera el saldo pendiente del contrato.',
+        { monto: `El saldo pendiente es $${account.saldo_pendiente.toFixed(2)}.` });
+    }
+    const { rows } = await tx.query(
+      `INSERT INTO pago (id, contrato_id, monto) VALUES ($1, $2, $3::numeric)
+       ON CONFLICT (id) DO NOTHING RETURNING id, contrato_id, monto, creado_en::text`,
+      [input.id, contractId, input.monto],
+    );
+    // A concurrent request for another contract may have claimed this UUID.
+    if (!rows[0]) throw new ApiError(409, 'PAYMENT_ID_CONFLICT', 'El identificador ya pertenece a otro pago.');
+    return { replayed: false, pago: { ...rows[0], monto: Number(rows[0].monto) },
+      contrato: await contractAccount(tx, contractId) };
+  });
 }
 
 export async function saveContract(database, input) {
@@ -318,7 +402,7 @@ async function serveFile(request, response, pathname, frontendDir) {
     const body = await readFile(path);
     response.writeHead(200, {
       'Content-Type': MIME[extname(path)] || 'application/octet-stream',
-      'Content-Length': body.length, 'Cache-Control': 'no-cache',
+      'Content-Length': body.length, 'Cache-Control': response.getHeader('Cache-Control') || 'no-cache',
     });
     response.end(request.method === 'HEAD' ? undefined : body);
   } catch (error) {
@@ -329,7 +413,9 @@ async function serveFile(request, response, pathname, frontendDir) {
   }
 }
 
-export function createServer({ database, frontendDir = defaultFrontendDir, logger = console } = {}) {
+export function createServer({ database, frontendDir = defaultFrontendDir, logger = console,
+  requireAuth = false, mailer, appUrl = process.env.APP_URL,
+  secureCookies = process.env.NODE_ENV === 'production' } = {}) {
   if (!database) throw new TypeError('createServer requires a database adapter.');
   const server = createHttpServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -338,16 +424,39 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
     try {
       const url = new URL(request.url, 'http://localhost');
       const path = url.pathname;
+      // La ejecución normal activa requireAuth; las pruebas anteriores pueden
+      // ejercitar el negocio aisladamente sin autenticación ni autorización.
+      const authContext = { request, response, path, database, json, readJson, mailer, appUrl, secureCookies };
+      if (requireAuth || path.startsWith('/api/auth/')) checkRequestOrigin(request, { secureCookies, appUrl });
+      if (await handleAuthRoutes(authContext)) return;
+      if (await handleRecoveryRoutes(authContext)) return;
+      if (requireAuth && await guardSession(authContext)) return;
+      const ruta = resolverRutaProtegida(request.method, path);
+      if (ruta?.metodoNoPermitido || (path === '/api/health' && request.method !== 'GET')) {
+        throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
+      }
+      // Las API nuevas no llegan al despacho de negocio hasta registrar su
+      // método, ruta y permiso. La sesión ya validada se reutiliza una sola vez.
+      if (path.startsWith('/api/') && path !== '/api/health' && !ruta) {
+        throw new ApiError(404, 'NOT_FOUND', 'No se encontró el recurso solicitado.');
+      }
+      if (requireAuth && ruta) guardPermission(authContext, ruta.permiso);
       if (path === '/api/health' && request.method === 'GET') {
         try { await database.query('SELECT 1 AS healthy'); }
         catch { throw new ApiError(503, 'DATABASE_UNAVAILABLE', 'La base de datos no está disponible.'); }
-        return json(response, 200, { status: 'ok', database: database.provider || 'postgresql' });
+        // Render define RENDER_GIT_COMMIT; permite comprobar qué commit está publicado.
+        const commit = process.env.RENDER_GIT_COMMIT;
+        return json(response, 200, {
+          status: 'ok',
+          database: database.provider || 'postgresql',
+          ...(commit ? { commit } : {}),
+        });
       }
-      if (path === '/api/maquinaria' && request.method === 'GET') {
+      if (ruta?.operacion === 'maquinaria.consultar') {
         const filters = validateMachineryFilters(url.searchParams);
         return json(response, 200, await findMachinery(database, filters));
       }
-      if (path === '/api/reservas/ocupadas' && request.method === 'GET') {
+      if (ruta?.operacion === 'reservas.consultar') {
         const id = Number(url.searchParams.get('maquinaria_id'));
         if (!Number.isInteger(id) || id < 1 || id > 2147483647) {
           throw new ApiError(400, 'VALIDATION_ERROR', 'Selecciona una maquinaria válida.');
@@ -363,22 +472,34 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         return json(response, 200, rows);
       }
 
-      if (path === '/api/contratos' && request.method === 'POST') {
+      if (ruta?.operacion === 'contratos.crear') {
         const input = validateContract(await readJson(request));
         const contract = await saveContract(database, input);
         response.setHeader('Location', `/api/contratos/${contract.id}`);
         return json(response, 201, contract);
       }
-      const signatureMatch = /^\/api\/contratos\/([^/]+)\/firma$/.exec(path);
-      if (signatureMatch) {
-        if (request.method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
-        const id = signatureMatch[1];
+      if (ruta?.operacion === 'alertas.consultar') {
+        const { dias, error } = validarDias(url.searchParams.get('dias'));
+        if (error) throw new ApiError(400, 'VALIDATION_ERROR', error, { dias: error });
+        const hoy = hoyElSalvador();
+        return json(response, 200, { hoy, dias, contratos: await buscarPorVencer(database, { hoy, dias }) });
+      }
+      if (ruta?.operacion === 'cobros.consultar') {
+        return json(response, 200, await findPendingAccounts(database));
+      }
+      if (ruta?.operacion === 'pagos.registrar') {
+        const [id] = ruta.parametros;
+        if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
+        const { replayed, ...result } = await savePayment(database, id, validatePayment(await readJson(request)));
+        return json(response, replayed ? 200 : 201, result);
+      }
+      if (ruta?.operacion === 'contratos.firmar') {
+        const [id] = ruta.parametros;
         if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         return json(response, 200, await saveSignature(database, id, await readJson(request, 131_072)));
       }
-      const documentMatch = /^\/api\/contratos\/([^/]+)\/documento$/.exec(path);
-      if (documentMatch && request.method === 'GET') {
-        const id = documentMatch[1];
+      if (ruta?.operacion === 'contratos.documento') {
+        const [id] = ruta.parametros;
         if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         const { rows } = await database.query(`SELECT ${CONTRACT_COLUMNS} FROM contrato WHERE id = $1`, [id]);
         if (!rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
@@ -386,9 +507,8 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
       }
       // El PDF se genera completo antes de responder: si algo falla, el cliente
       // recibe un error JSON y nunca un PDF a medias.
-      const pdfMatch = /^\/api\/contratos\/([^/]+)\/pdf$/.exec(path);
-      if (pdfMatch && request.method === 'GET') {
-        const id = pdfMatch[1];
+      if (ruta?.operacion === 'contratos.pdf') {
+        const [id] = ruta.parametros;
         if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         const { rows } = await database.query(`SELECT ${CONTRACT_COLUMNS} FROM contrato WHERE id = $1`, [id]);
         if (!rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
@@ -400,16 +520,14 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         });
         return response.end(pdf);
       }
-      if (path.startsWith('/api/contratos/') && request.method === 'GET') {
-        const id = path.slice('/api/contratos/'.length);
+      if (ruta?.operacion === 'contratos.consultar') {
+        const [id] = ruta.parametros;
         if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         const { rows } = await database.query(`SELECT ${CONTRACT_COLUMNS} FROM contrato WHERE id = $1`, [id]);
         if (!rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
         return json(response, 200, await contractWithMachinery(database, rows[0]));
       }
       if (path.startsWith('/api/')) {
-        const known = ['/api/maquinaria', '/api/contratos', '/api/health'].includes(path) || path.startsWith('/api/contratos/');
-        if (known) throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'El método no está permitido para este recurso.');
         throw new ApiError(404, 'NOT_FOUND', 'No se encontró el recurso solicitado.');
       }
       if (!['GET', 'HEAD'].includes(request.method)) {
@@ -418,7 +536,7 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
       await serveFile(request, response, path, frontendDir);
     } catch (error) {
       if (response.headersSent || response.destroyed) return;
-      if (error instanceof ApiError) {
+      if (error instanceof ApiError || error instanceof AuthError) {
         return json(response, error.status, {
           error: { code: error.code, message: error.message, ...(error.fields ? { fields: error.fields } : {}) },
         });

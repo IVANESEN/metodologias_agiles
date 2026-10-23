@@ -1,5 +1,9 @@
 'use strict';
 import { createSignaturePanel } from './firma.js';
+import { createCobrosPanel } from './cobros.mjs';
+import { sessionReady, hasPermission, requirePermission } from './sesion.js';
+
+if (await sessionReady) {
 
 const ui = {
   grid: document.getElementById('equipment-grid'),
@@ -46,11 +50,12 @@ const ui = {
 const emptyFilters = () => ({ tipo: '', ubicacion: '', fecha_inicio: '', fecha_fin: '' });
 const state = { equipment: [], selected: new Map(), loading: false, submitting: false, filters: emptyFilters(), types: new Set(), typesInitialized: false, catalogueRequest: 0, catalogueController: null };
 state.signing = false;
-const signaturePanel = createSignaturePanel(readResponse, busy => {
+const signaturePanel = hasPermission('contratos.firmar') ? createSignaturePanel(readResponse, busy => {
   state.signing = busy;
   renderEquipment();
   updateEstimate();
-});
+}) : null;
+const cobrosPanel = hasPermission('cobros.consultar') ? createCobrosPanel(readResponse, { hasPermission }) : null;
 const money = new Intl.NumberFormat('es-SV', { style: 'currency', currency: 'USD' });
 const dateDisplay = new Intl.DateTimeFormat('es-SV', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const DAY_MS = 86400000;
@@ -227,6 +232,7 @@ function removeEquipment(id, focusSummary = false) {
 }
 
 function selectEquipment(item) {
+  if (!requirePermission('contratos.crear')) return;
   if (state.loading || state.submitting || state.signing) return;
   if (state.selected.has(item.id)) {
     removeEquipment(item.id);
@@ -295,6 +301,7 @@ function renderEquipment() {
     const button = element('button', 'select-button', selected ? 'Deseleccionar' : item.disponible ? 'Seleccionar' : 'No disponible');
     button.type = 'button';
     button.id = `select-equipment-${item.id}`;
+    button.hidden = !hasPermission('contratos.crear');
     button.disabled = (!item.disponible && !selected) || state.loading || state.submitting || state.signing;
     button.setAttribute('aria-pressed', String(selected));
     button.setAttribute('aria-label', `${selected ? 'Deseleccionar' : 'Seleccionar'} ${item.nombre}`);
@@ -343,6 +350,7 @@ function filtersSummary(filters) {
 }
 
 async function loadEquipment(filters = state.filters) {
+  if (!hasPermission('maquinaria.consultar')) return;
   const applied = { ...filters };
   const requestId = ++state.catalogueRequest;
   state.catalogueController?.abort();
@@ -495,7 +503,7 @@ function showConfirmation(contract) {
   ui.contractId.textContent = contract.id;
   loadDocument(contract.id);
   showPdfLink(contract.id);
-  signaturePanel.show(contract);
+  signaturePanel?.show(contract);
   const permalink = new URL(window.location.href);
   permalink.search = new URLSearchParams({ contrato: contract.id }).toString();
   permalink.hash = 'contrato';
@@ -510,6 +518,7 @@ function showConfirmation(contract) {
 // HU6b: enlace para descargar el contrato en PDF, debajo de las cláusulas.
 function showPdfLink(id) {
   document.getElementById('contract-pdf')?.remove();
+  if (!hasPermission('contratos.pdf')) return;
   const link = element('a', 'select-button', 'Descargar PDF');
   link.id = 'contract-pdf';
   link.setAttribute('href', `/api/contratos/${encodeURIComponent(id)}/pdf`);
@@ -518,19 +527,19 @@ function showPdfLink(id) {
 }
 
 async function loadDocument(id) {
+  if (!hasPermission('contratos.documento')) return;
   ui.clauses.replaceChildren();
   ui.documentBox.open = false;
   try {
     const response = await fetch(`/api/contratos/${encodeURIComponent(id)}/documento`, { headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error('documento');
-    const documento = await response.json();
+    const documento = await readResponse(response);
     ui.clauses.append(element('h4', '', documento.titulo));
     for (const clause of documento.clausulas) {
       ui.clauses.append(element('h5', '', clause.titulo), element('p', '', clause.texto));
     }
     if (documento.aviso) ui.clauses.append(element('p', 'form-note', documento.aviso));
-  } catch {
-    ui.clauses.append(element('p', '', 'No se pudieron cargar las cláusulas. El contrato sí quedó guardado.'));
+  } catch (failure) {
+    ui.clauses.append(element('p', '', failure.status === 403 ? failure.message : 'No se pudieron cargar las cláusulas. El contrato sí quedó guardado.'));
   }
 }
 
@@ -552,6 +561,7 @@ function applyServerErrors(error) {
 
 ui.form.addEventListener('submit', async event => {
   event.preventDefault();
+  if (!requirePermission('contratos.crear')) return;
   if (state.submitting || state.loading || !validateForm()) return;
   const payload = { maquinaria_ids: [...state.selected.keys()], cliente: ui.cliente.value.trim(), ciudad: ui.ciudad.value.trim(), operador: ui.operador.value.trim(), operador_documento: ui.operadorDocumento.value.trim(), seguro: ui.seguro.value, forma_pago: ui.formaPago.value, condiciones_especiales: ui.condiciones.value.trim(), fecha_inicio: ui.inicio.value, fecha_fin: ui.fin.value };
   state.submitting = true;
@@ -568,6 +578,7 @@ ui.form.addEventListener('submit', async event => {
     }
     showConfirmation(contract);
     state.selected.clear();
+    if (hasPermission('cobros.consultar')) cobrosPanel?.load();
     await loadEquipment();
   } catch (error) {
     const message = error instanceof TypeError ? 'No se recibió la confirmación del servidor. Comprueba tu conexión antes de volver a enviar la solicitud.' : error.message;
@@ -600,6 +611,7 @@ for (const field of [ui.cliente, ui.ciudad, ui.operador, ui.operadorDocumento, u
   ui.error.hidden = true;
 });
 ui.newContract.addEventListener('click', () => {
+  if (!requirePermission('contratos.crear')) return;
   if (state.submitting || state.signing) return;
   window.history.replaceState(null, '', `${window.location.pathname}#contrato`);
   state.selected.clear();
@@ -665,19 +677,21 @@ for (const field of [ui.ubicacion, ui.filterInicio, ui.filterFin]) field.addEven
 resetDates();
 updateEstimate();
 loadEquipment();
+if (hasPermission('cobros.consultar')) cobrosPanel?.load();
 
 // El enlace permite recuperar el mismo contrato y su firma desde otro teléfono
 // o después de recargar, sin generar una nueva reserva.
 const savedContractId = new URLSearchParams(window.location.search).get('contrato');
-if (savedContractId) {
+if (savedContractId && hasPermission('contratos.consultar')) {
   ui.newContract.disabled = true;
   ui.form.hidden = true;
   try {
     const contract = await readResponse(await fetch(`/api/contratos/${encodeURIComponent(savedContractId)}`, { cache: 'no-store' }));
     showConfirmation(contract);
   } catch (error) {
-    ui.form.hidden = false;
+    ui.form.hidden = !hasPermission('contratos.crear');
     formError(error instanceof TypeError ? 'No se pudo conectar para recuperar el contrato. Recarga la página para volver a intentarlo.' : error.message);
     ui.error.scrollIntoView({ block: 'center' });
   } finally { updateEstimate(); }
+}
 }

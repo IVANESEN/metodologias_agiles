@@ -268,6 +268,32 @@ fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
 .signature-actions button { min-height: 44px; }
 .signature-actions .primary-button { flex: 1; width: auto; justify-content: center; }
 
+/* Sprint 2 - HU5: Ficha tecnica */
+.equipment-technical-sheet {
+  margin: 15px 0;
+  padding: 12px;
+  border: 1px solid #d8e0e8;
+  border-radius: 10px;
+}
+
+.equipment-technical-sheet summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 5px;
+}
+
+.technical-sheet-content {
+  padding-top: 12px;
+  line-height: 1.6;
+}
+
+.technical-sheet-content img {
+  width: 100%;
+  max-height: 230px;
+  object-fit: contain;
+  border-radius: 8px;
+  margin-top: 10px;
+}
 .cobros { margin-top: 40px; padding-top: 32px; border-top: 1px solid var(--border); scroll-margin-top: 24px; }
 .cobros-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
 .cobros-help { max-width: 720px; margin: 0 0 20px; color: var(--muted); font-size: 14px; }

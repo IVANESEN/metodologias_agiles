@@ -73,6 +73,18 @@ ALTER TABLE contrato ADD COLUMN IF NOT EXISTS condiciones_especiales TEXT
 ALTER TABLE contrato ADD COLUMN IF NOT EXISTS firma JSONB;
 ALTER TABLE contrato ADD COLUMN IF NOT EXISTS firmado_en TIMESTAMPTZ;
 
+
+-- Sprint 2 HU5: ficha técnica de maquinaria
+ALTER TABLE maquinaria
+ADD COLUMN IF NOT EXISTS horometro INTEGER
+CHECK (horometro >= 0);
+
+ALTER TABLE maquinaria
+ADD COLUMN IF NOT EXISTS ficha_tecnica TEXT;
+
+ALTER TABLE maquinaria
+ADD COLUMN IF NOT EXISTS foto_url TEXT;
+
 -- Cobros: each confirmed payment is recorded once. Balance and payment status
 -- are derived from the contract total and these entries, independently of estado.
 -- Historical contracts receive no invented payments when this table is added.

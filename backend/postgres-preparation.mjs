@@ -26,7 +26,8 @@ const LEGACY_COLUMNS = {
     creado_en: 'timestamp with time zone' },
 };
 const CURRENT_COLUMNS = {
-  maquinaria: { ...LEGACY_COLUMNS.maquinaria, ubicacion: 'character varying(100)' },
+  maquinaria: { ...LEGACY_COLUMNS.maquinaria, ubicacion: 'character varying(100)',
+    horometro: 'integer', ficha_tecnica: 'text', foto_url: 'text' },
   contrato: { ...LEGACY_COLUMNS.contrato, ciudad: 'character varying(100)',
     operador: 'character varying(160)', operador_documento: 'character varying(20)',
     seguro: 'character varying(30)', forma_pago: 'character varying(30)',

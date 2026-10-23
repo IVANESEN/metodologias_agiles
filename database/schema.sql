@@ -126,4 +126,27 @@ CREATE TABLE IF NOT EXISTS token_recuperacion (
   creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS token_recuperacion_usuario_idx ON token_recuperacion (usuario_id);
+-- Sprint 3 HU10: Registro de recepción de maquinaria en obra
+CREATE TABLE IF NOT EXISTS recepcion_maquinaria (
+  id UUID PRIMARY KEY,
+  contrato_id UUID NOT NULL,
+  maquinaria_id INTEGER NOT NULL,
+  horometro INTEGER NOT NULL,
+  fotos JSONB NOT NULL,
+  fecha_recepcion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT recepcion_maquinaria_contrato_equipo_fkey
+    FOREIGN KEY (contrato_id, maquinaria_id)
+    REFERENCES contrato_maquinaria(contrato_id, maquinaria_id)
+    ON DELETE RESTRICT,
+  CONSTRAINT recepcion_maquinaria_contrato_equipo_key
+    UNIQUE (contrato_id, maquinaria_id),
+  CONSTRAINT recepcion_maquinaria_horometro_check
+    CHECK (horometro >= 0),
+  CONSTRAINT recepcion_maquinaria_fotos_tipo_check
+    CHECK (jsonb_typeof(fotos) = 'array'),
+  CONSTRAINT recepcion_maquinaria_fotos_cantidad_check
+    CHECK (jsonb_array_length(fotos) BETWEEN 1 AND 5)
+);
 
+CREATE INDEX IF NOT EXISTS recepcion_contrato_idx
+  ON recepcion_maquinaria (contrato_id, fecha_recepcion DESC);

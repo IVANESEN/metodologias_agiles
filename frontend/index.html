@@ -15,6 +15,7 @@
     <script src="/sesion.js" type="module"></script>
     <script src="/app.js" type="module"></script>
     <script src="/alertas.js" type="module"></script>
+    <script src="/recepcion.js" type="module"></script>
   </head>
   <body>
     <a class="skip-link" href="#catalogo" data-permission="maquinaria.consultar" hidden>Ir al catálogo</a>
@@ -31,6 +32,7 @@
         <a class="nav-tab" href="#contrato" data-permission="contratos.consultar" hidden>Contrato</a>
         <a class="nav-tab" href="#alertas" data-permission="alertas.consultar" hidden>Alertas</a>
         <a class="nav-tab" href="#cobros" data-permission="cobros.consultar" hidden>Cobros</a>
+        <a class="nav-tab" href="#recepcion" data-permission="recepciones.consultar" hidden>Recepción</a>
       </nav>
     </header>
 
@@ -156,6 +158,64 @@
         <p class="cobros-notice" id="cobros-notice" role="status" aria-live="polite" aria-atomic="true" tabindex="-1" hidden></p>
         <p class="catalogue-status cobros-status" id="cobros-status" role="status" aria-live="polite">Cargando cobros pendientes…</p>
         <div class="cobros-list" id="cobros-list" aria-busy="true"></div>
+      </section>
+      <section class="recepcion" id="recepcion" aria-labelledby="recepcion-title"
+        data-permission="recepciones.consultar" hidden>
+        <div class="section-heading">
+          <div><p class="eyebrow">SPRINT 3 · HU10</p><h2 id="recepcion-title">Recepción de maquinaria en obra</h2></div>
+        </div>
+        <p class="recepcion-help">Busca el contrato, registra el horómetro y conserva fotografías del estado en que llegó cada máquina.</p>
+        <div class="recepcion-layout">
+          <form class="recepcion-form" id="recepcion-form" data-permission="recepciones.crear" hidden novalidate>
+            <div class="recepcion-contract-search">
+              <div class="field">
+                <label for="recepcion-contrato">Número de contrato</label>
+                <input type="text" id="recepcion-contrato" name="contrato_id" autocomplete="off"
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  aria-describedby="recepcion-contrato-help recepcion-contrato-error" required>
+                <p class="filter-help" id="recepcion-contrato-help">Pega el UUID completo que aparece en la confirmación del contrato.</p>
+                <p class="field-error" id="recepcion-contrato-error" hidden></p>
+              </div>
+              <button class="retry-button" id="recepcion-buscar" type="button">Buscar contrato</button>
+            </div>
+            <p class="recepcion-contract-status" id="recepcion-contract-status" role="status" aria-live="polite"></p>
+            <fieldset id="recepcion-fields" disabled>
+              <div class="field">
+                <label for="recepcion-maquinaria">Maquinaria recibida</label>
+                <select id="recepcion-maquinaria" name="maquinaria_id"
+                  aria-describedby="recepcion-maquinaria-error" required>
+                  <option value="">Busca un contrato primero</option>
+                </select>
+                <p class="field-error" id="recepcion-maquinaria-error" hidden></p>
+              </div>
+              <div class="field">
+                <label for="recepcion-horometro">Lectura del horómetro</label>
+                <input type="number" id="recepcion-horometro" name="horometro" inputmode="numeric"
+                  min="0" max="2147483647" step="1" aria-describedby="recepcion-horometro-error" required>
+                <p class="field-error" id="recepcion-horometro-error" hidden></p>
+              </div>
+              <div class="field">
+                <label for="recepcion-fotos">Fotografías de la maquinaria</label>
+                <input type="file" id="recepcion-fotos" name="fotos"
+                  accept="image/jpeg,image/png,image/webp" multiple
+                  aria-describedby="recepcion-fotos-help recepcion-fotos-error" required>
+                <p class="filter-help" id="recepcion-fotos-help">Adjunta entre 1 y 5 fotos JPEG, PNG o WebP. Se optimizan antes de enviarse.</p>
+                <p class="field-error" id="recepcion-fotos-error" hidden></p>
+              </div>
+              <div class="recepcion-previews" id="recepcion-previews" aria-live="polite"></div>
+              <button class="primary-button" id="recepcion-guardar" type="submit" disabled>Guardar recepción</button>
+            </fieldset>
+            <p class="recepcion-message" id="recepcion-mensaje" role="status" aria-live="polite" tabindex="-1" hidden></p>
+          </form>
+          <section class="recepcion-evidencias" aria-labelledby="recepcion-evidencias-title">
+            <div class="recepcion-evidencias-heading">
+              <h3 id="recepcion-evidencias-title">Evidencias guardadas</h3>
+              <button class="retry-button" id="recepcion-actualizar" type="button" disabled>Actualizar</button>
+            </div>
+            <p class="catalogue-status recepcion-status" id="recepcion-status">Busca un contrato para consultar sus recepciones.</p>
+            <div class="recepcion-lista" id="recepcion-lista"></div>
+          </section>
+        </div>
       </section>
     </main>
     <footer class="site-footer"><span>Constructora El Salvador</span><span>Maquinaria para construir lo que sigue.</span></footer>

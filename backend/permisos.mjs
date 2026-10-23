@@ -7,6 +7,8 @@ const COMPARTIDOS = Object.freeze([
   'contratos.pdf',
   'contratos.firmar',
   'alertas.consultar',
+  'recepciones.crear',
+  'recepciones.consultar',
 ]);
 const POR_ROL = Object.freeze({
   residente: COMPARTIDOS,
@@ -40,6 +42,8 @@ const RUTAS = Object.freeze([
   { operacion: 'contratos.firmar', metodo: 'POST', patron: /^\/api\/contratos\/([^/]+)\/firma$/, permiso: 'contratos.firmar' },
   { operacion: 'contratos.documento', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)\/documento$/, permiso: 'contratos.documento' },
   { operacion: 'contratos.pdf', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)\/pdf$/, permiso: 'contratos.pdf' },
+  { operacion: 'recepciones.crear', metodo: 'POST', patron: /^\/api\/recepciones$/, permiso: 'recepciones.crear' },
+  { operacion: 'recepciones.consultar', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)\/recepciones$/, permiso: 'recepciones.consultar' },
   { operacion: 'contratos.consultar', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)$/, permiso: 'contratos.consultar' },
 ].map(Object.freeze));
 

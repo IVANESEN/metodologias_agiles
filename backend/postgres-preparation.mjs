@@ -1,4 +1,13 @@
-const APP_TABLES = ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion', 'token_recuperacion'];
+const APP_TABLES = [
+  'maquinaria',
+  'contrato',
+  'contrato_maquinaria',
+  'pago',
+  'usuario',
+  'sesion',
+  'token_recuperacion',
+  'recepcion_maquinaria',
+];
 const API_ROLES = ['anon', 'authenticated', 'service_role'];
 const INTERNAL_SCHEMAS = new Set(['auth', 'storage', 'realtime', '_realtime', 'extensions',
   'supabase_functions', 'supabase_migrations', 'vault', 'graphql', 'graphql_public',
@@ -31,6 +40,14 @@ const CURRENT_COLUMNS = {
     creado_en: 'timestamp with time zone' },
   token_recuperacion: { id: 'uuid', usuario_id: 'uuid', token_hash: 'text', expira_en: 'timestamp with time zone',
     usado_en: 'timestamp with time zone', creado_en: 'timestamp with time zone' },
+  recepcion_maquinaria: {
+    id: 'uuid',
+    contrato_id: 'uuid',
+    maquinaria_id: 'integer',
+    horometro: 'integer',
+    fotos: 'jsonb',
+    fecha_recepcion: 'timestamp with time zone',
+  },
 };
 
 export class PostgresPreparationError extends Error {
@@ -225,17 +242,25 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
     }
     const sameColumns = (actual, expected) => Array.isArray(actual) && actual.length === expected.length &&
       [...actual].sort().join(',') === [...expected].sort().join(',');
+    const normalizeExpression = (definition) => (definition || '').replace(/[\s()]/g, '').toLowerCase();
     const primaryKey = table.name === 'contrato_maquinaria' ? ['contrato_id', 'maquinaria_id'] : ['id'];
     const hasPrimaryKey = table.constraints.some((constraint) => constraint.type === 'p' &&
       sameColumns(constraint.columns, primaryKey));
+    const recepcionForeignKey = table.name === 'recepcion_maquinaria' &&
+      table.constraints.some((constraint) => constraint.type === 'f' && constraint.validated &&
+        sameColumns(constraint.columns, ['contrato_id', 'maquinaria_id']) &&
+        constraint.referenceSchema === schema && constraint.referenceTable === 'contrato_maquinaria' &&
+        sameColumns(constraint.referenceColumns, ['contrato_id', 'maquinaria_id']) && constraint.onDelete === 'r');
     const foreignKeys = ['maquinaria', 'usuario'].includes(table.name) ? [] : ['sesion', 'token_recuperacion'].includes(table.name)
       ? [['usuario_id', 'usuario']] : table.name === 'contrato'
       ? [['maquinaria_id', 'maquinaria']] : table.name === 'pago' ? [['contrato_id', 'contrato']]
         : [['maquinaria_id', 'maquinaria'], ['contrato_id', 'contrato']];
-    const hasForeignKeys = foreignKeys.every(([column, referenceTable]) => table.constraints.some((constraint) =>
-      constraint.type === 'f' && constraint.validated && sameColumns(constraint.columns, [column]) &&
-      constraint.referenceSchema === schema && constraint.referenceTable === referenceTable &&
-      sameColumns(constraint.referenceColumns, ['id'])));
+    const hasForeignKeys = table.name === 'recepcion_maquinaria'
+      ? recepcionForeignKey
+      : foreignKeys.every(([column, referenceTable]) => table.constraints.some((constraint) =>
+        constraint.type === 'f' && constraint.validated && sameColumns(constraint.columns, [column]) &&
+        constraint.referenceSchema === schema && constraint.referenceTable === referenceTable &&
+        sameColumns(constraint.referenceColumns, ['id'])));
     if (!hasPrimaryKey || !hasForeignKeys) {
       fail('INCOMPATIBLE_EXISTING_TABLES', 'Faltan claves primarias o relaciones esperadas en las tablas existentes. Revisa el esquema antes de continuar.');
     }
@@ -251,7 +276,6 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         'Las tablas de autenticación requieren datos obligatorios, identificadores únicos y relaciones protegidas.');
     }
     if (table.name === 'pago') {
-      const normalizeExpression = (definition) => (definition || '').replace(/[\s()]/g, '').toLowerCase();
       const requiredNotNull = Object.keys(LEGACY_COLUMNS.pago).every((name) =>
         table.columns.some((column) => column.name === name && column.notNull));
       const positiveAmount = table.constraints.some((constraint) => constraint.type === 'c' &&
@@ -265,6 +289,27 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         normalizeExpression(column.defaultValue) === 'current_timestamp');
       if (!requiredNotNull || !positiveAmount || !restrictedContract || !createdTimestamp) {
         fail('INCOMPATIBLE_EXISTING_TABLES', 'Las restricciones de pagos no coinciden con las esperadas. Revisa importes positivos, datos obligatorios, fechas y relaciones antes de continuar.');
+      }
+    }
+    if (table.name === 'recepcion_maquinaria') {
+      const requiredNotNull = Object.keys(CURRENT_COLUMNS.recepcion_maquinaria).every((name) =>
+        table.columns.some((column) => column.name === name && column.notNull));
+      const uniqueMachine = table.constraints.some((constraint) => constraint.type === 'u' &&
+        sameColumns(constraint.columns, ['contrato_id', 'maquinaria_id']));
+      const nonNegativeHours = table.constraints.some((constraint) => constraint.type === 'c' &&
+        constraint.validated && sameColumns(constraint.columns, ['horometro']) &&
+        /^checkhorometro>=0$/.test(normalizeExpression(constraint.definition)));
+      const photoArray = table.constraints.some((constraint) => constraint.type === 'c' &&
+        constraint.validated && sameColumns(constraint.columns, ['fotos']) &&
+        normalizeExpression(constraint.definition).includes("jsonb_typeoffotos='array'::text"));
+      const photoCount = table.constraints.some((constraint) => constraint.type === 'c' &&
+        constraint.validated && sameColumns(constraint.columns, ['fotos']) &&
+        normalizeExpression(constraint.definition).includes('jsonb_array_lengthfotos>=1') &&
+        normalizeExpression(constraint.definition).includes('jsonb_array_lengthfotos<=5'));
+      const createdTimestamp = table.columns.some((column) => column.name === 'fecha_recepcion' &&
+        normalizeExpression(column.defaultValue) === 'current_timestamp');
+      if (!requiredNotNull || !uniqueMachine || !nonNegativeHours || !photoArray || !photoCount || !createdTimestamp) {
+        fail('INCOMPATIBLE_EXISTING_TABLES', 'Las restricciones de recepción no coinciden con las esperadas. Revisa evidencias, horómetro, unicidad, fecha y relación contractual.');
       }
     }
     if (current && !table.rlsEnabled) {

@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
-import { permisosParaRol, tienePermiso } from './permisos.mjs';
+import { permisosParaRol, tienePermiso, ROLES } from './permisos.mjs';
 
 const derive = promisify(scrypt);
 // OWASP scrypt profile: N=2^16, r=8, p=2. No password or session token is stored in clear text.
@@ -44,7 +44,7 @@ let dummyHash;
 const dummyPasswordHash = () => dummyHash ??= hashPassword(randomBytes(32).toString('hex'));
 export async function createUser(database, { correo, nombre, clave, rol = 'residente' }) {
   correo = emailAddress(correo);
-  if (typeof nombre !== 'string' || !nombre.trim() || nombre.trim().length > 160 || !['residente', 'gerente'].includes(rol)) {
+  if (typeof nombre !== 'string' || !nombre.trim() || nombre.trim().length > 160 || !ROLES.includes(rol)) {
     throw new AuthError(400, 'VALIDATION_ERROR', 'Revisa el nombre y el rol del usuario.');
   }
   const claveHash = await hashPassword(clave);
@@ -95,6 +95,7 @@ export async function handleAuthRoutes({ request, response, path, database, json
       if (oldToken) await tx.query('DELETE FROM sesion WHERE token_hash=$1', [hashToken(oldToken)]);
       await tx.query(`INSERT INTO sesion (id,usuario_id,token_hash,expira_en)
         VALUES ($1,$2,$3,CURRENT_TIMESTAMP + INTERVAL '8 hours')`, [randomUUID(), user.id, hashToken(token)]);
+      await tx.query('UPDATE usuario SET ultimo_acceso=CURRENT_TIMESTAMP WHERE id=$1', [user.id]);
     });
     response.setHeader('Set-Cookie', cookie(token, secureCookies));
     json(response, 200, publicUser(user));
@@ -111,17 +112,20 @@ export async function handleAuthRoutes({ request, response, path, database, json
   return true;
 }
 const PUBLIC_FILES = new Set(['/login.html','/login.js','/auth-form.js','/recuperar.html','/recuperar.js',
-  '/restablecer.html','/restablecer.js','/styles.css','/favicon.svg']);
+  '/restablecer.html','/restablecer.js','/registro.html','/registro.js','/creditos.html','/styles.css','/favicon.svg']);
+// Recursos estáticos sin datos (marca, estilos, iconos, fotos de catálogo).
+const PUBLIC_PREFIXES = ['/assets/'];
 export async function guardSession(context) {
   const { request, response, path, database } = context;
-  if (path === '/api/health' || path.startsWith('/api/auth/') || PUBLIC_FILES.has(path)) return false;
+  if (path === '/api/health' || path.startsWith('/api/auth/') || PUBLIC_FILES.has(path) ||
+      (PUBLIC_PREFIXES.some(prefix => path.startsWith(prefix)) && !path.includes('..'))) return false;
   response.setHeader('Cache-Control', 'no-store');
   const user = await currentUser(database, request);
   if (user) {
     context.user = user;
     return false;
   }
-  if (['GET', 'HEAD'].includes(request.method) && ['/', '/index.html'].includes(path)) {
+  if (['GET', 'HEAD'].includes(request.method) && ['/', '/index.html', '/app.html'].includes(path)) {
     response.writeHead(302, { Location: '/login.html' }); response.end(); return true;
   }
   throw new AuthError(401, 'UNAUTHENTICATED', 'Inicia sesión para continuar.');

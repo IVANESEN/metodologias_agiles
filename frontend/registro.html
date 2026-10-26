@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0F1EAD">
+  <title>Crear cuenta · Constructora El Salvador</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/marca.css">
+  <script src="/assets/js/auth-ui.js" type="module"></script>
+  <script src="/registro.js" type="module"></script>
+</head>
+<body>
+<main class="auth">
+  <section class="auth-visual" aria-label="Maquinaria pesada en obra">
+    <img src="/assets/img/login-obra.jpg" alt="Tractor de oruga sobre un terraplén al atardecer" fetchpriority="high">
+    <a class="auth-brand" href="/login.html" aria-label="Constructora El Salvador, inicio"><span data-logo></span></a>
+    <div class="auth-claim">
+      <span class="eyebrow on-dark">Renta y venta de maquinaria pesada</span>
+      <h2>tu próxima obra<b>empieza aquí</b></h2>
+      <p>Crea tu cuenta de cliente para cotizar al instante, reservar fechas y comprar equipo con entrega en obra.</p>
+      <div class="claim-stats">
+        <div><strong>Renta</strong><span>por día, semana o mes</span></div>
+        <div><strong>Compra</strong><span>equipo nuevo y usado</span></div>
+        <div><strong>Entrega</strong><span>directo en tu obra</span></div>
+      </div>
+    </div>
+  </section>
+  <section class="auth-panel">
+    <div class="auth-panel-inner">
+      <a class="auth-mobile-brand" href="/login.html" aria-label="Constructora El Salvador"><span data-logo></span></a>
+      <header>
+        <span class="eyebrow">Cuenta de cliente</span>
+        <h1 style="margin-top:8px">Crea tu cuenta</h1>
+        <p class="lead">Te toma un minuto. Los proveedores se registran con un asesor de la constructora.</p>
+      </header>
+      <form class="auth-form" novalidate>
+        <div class="field"><label for="nombre">Nombre completo</label>
+          <div class="input-group"><span data-icon="user"></span><input class="input" id="nombre" name="nombre" maxlength="160" autocomplete="name" placeholder="Ej. Ana Martínez" required></div></div>
+        <div class="field"><label for="empresa">Empresa <span class="muted">(opcional)</span></label>
+          <div class="input-group"><span data-icon="building"></span><input class="input" id="empresa" name="empresa" maxlength="160" autocomplete="organization" placeholder="Constructora o razón social"></div></div>
+        <div class="grid-2">
+          <div class="field"><label for="correo">Correo</label>
+            <input class="input" id="correo" name="correo" type="email" maxlength="254" autocomplete="email" placeholder="nombre@empresa.com" required></div>
+          <div class="field"><label for="telefono">Teléfono</label>
+            <input class="input" id="telefono" name="telefono" type="tel" maxlength="30" autocomplete="tel" placeholder="7000-0000"></div>
+        </div>
+        <div class="field"><label for="clave">Contraseña</label>
+          <div class="input-group"><span data-icon="lock"></span><input class="input" id="clave" name="clave" type="password" minlength="8" maxlength="256" autocomplete="new-password" placeholder="Mínimo 8 caracteres" required></div>
+          <div class="strength" data-strength-for="clave" data-level="0" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+          <p class="hint" data-strength-text>Usa al menos 8 caracteres con letras y números.</p></div>
+        <label class="check"><input type="checkbox" name="terminos" required> Acepto los términos de uso y el tratamiento de mis datos.</label>
+        <p id="auth-message" role="alert"></p>
+        <button class="btn btn-lg btn-block" type="submit">Crear cuenta</button>
+      </form>
+      <p class="auth-footer">¿Ya tienes cuenta? <a href="/login.html">Inicia sesión</a></p>
+      <p class="legal">Constructora El Salvador · Renta y venta de maquinaria pesada · <a href="/creditos.html">Créditos de fotografía</a></p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

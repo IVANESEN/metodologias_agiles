@@ -64,6 +64,11 @@ async function loadSession() {
     if (!user || typeof user.nombre !== 'string' || !Array.isArray(user.permisos)
       || !user.permisos.every(permission => typeof permission === 'string')) throw new Error('sesión');
     for (const permission of user.permisos) permissions.add(permission);
+    // Clientes y proveedores trabajan en el portal; este módulo es de contratos de obra.
+    if (user.permisos.includes('portal.acceder') && !user.permisos.includes('maquinaria.consultar')) {
+      location.replace('/app.html');
+      return null;
+    }
     authenticated = true;
     for (const node of document.querySelectorAll('[data-permission]')) node.hidden = !hasPermission(node.dataset.permission);
 

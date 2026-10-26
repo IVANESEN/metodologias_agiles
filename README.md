@@ -1,6 +1,11 @@
 
 # Constructora El Salvador
 
+**Sprint 4:** portal multirrol (cliente, proveedor, empleado y administración) con tienda,
+cotizador, pedidos, alta de productos de proveedores, tasas configurables y auditoría.
+Ver [SPRINT4_PORTAL.md](SPRINT4_PORTAL.md) para pantallas, cuentas de prueba,
+escenarios y migración.
+
 Sistema de alquiler de maquinaria. Incluye HU3 (consulta por tipo, fechas y ciudad) y contratos con una o varias máquinas.
 
 Sprint 1 también incluye reserva por fechas (HU8), formalización del contrato

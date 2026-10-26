@@ -163,6 +163,60 @@ test('HU2 UI: residente oculta Cobros, no hace su solicitud y corrige enlaces di
   assert.deepEqual(page.redirects, []);
 });
 
+for (const hash of ['#cobros-title', '#cobros-list', '#%63obros', '#%63obros-title']) {
+  test(`HU2 UI: residente rechaza el enlace directo ${hash} y sus descendientes sin cargar Cobros`, async () => {
+    const page = startPage({ hash });
+    await page.ready;
+    assert.equal(page.location.hash, '#catalogo');
+    assert.equal(page.document.getElementById('cobros').hidden, true);
+    assert.match(page.document.getElementById('permission-notice').textContent, /No tienes permiso/);
+    assert.equal(page.calls.some(call => call.path === '/api/cobros'), false);
+    page.document.getElementById('permission-notice').hidden = true;
+    page.location.hash = hash;
+    await page.events.dispatch('hashchange');
+    assert.equal(page.location.hash, '#catalogo');
+    assert.equal(page.document.getElementById('permission-notice').hidden, false);
+    assert.equal(page.calls.some(call => call.path === '/api/cobros'), false);
+    assert.deepEqual(page.redirects, []);
+  });
+}
+
+test('HU2 UI: gerente conserva enlaces autorizados a descendientes de Cobros', async () => {
+  const page = startPage({ role: 'gerente', permisos: managerPermissions, hash: '#cobros-title' });
+  await page.ready;
+  assert.equal(page.location.hash, '#cobros-title');
+  assert.equal(page.document.getElementById('cobros').hidden, false);
+  assert.equal(page.calls.filter(call => call.path === '/api/cobros').length, 1);
+  assert.equal(page.document.getElementById('permission-notice').hidden, true);
+  page.location.hash = '#%63obros-list';
+  await page.events.dispatch('hashchange');
+  assert.equal(page.location.hash, '#%63obros-list');
+  assert.equal(page.document.getElementById('permission-notice').hidden, true);
+  assert.deepEqual(page.redirects, []);
+});
+
+test('HU2 UI: el permiso de un descendiente no permite acceder a su sección restringida', async () => {
+  const page = startPage({ permisos: ['maquinaria.consultar', 'contratos.documento'], hash: '#contract-document' });
+  await page.ready;
+  assert.equal(page.location.hash, '#catalogo');
+  assert.equal(page.document.getElementById('contrato').hidden, true);
+  assert.match(page.document.getElementById('permission-notice').textContent, /No tienes permiso/);
+  assert.ok(page.calls.slice(1).every(call => call.path.startsWith('/api/maquinaria')));
+});
+
+test('HU2 UI: un hash mal codificado no interrumpe la sesión ni las funciones autorizadas', async () => {
+  const page = startPage({ hash: '#%E0%A4%A' });
+  await page.ready;
+  assert.equal(page.document.querySelector('main').hidden, false);
+  assert.equal(page.context.hasPermission('maquinaria.consultar'), true);
+  assert.ok(page.calls.some(call => call.path.startsWith('/api/maquinaria')));
+  page.location.hash = '#%';
+  await page.events.dispatch('hashchange');
+  assert.equal(page.context.hasPermission('maquinaria.consultar'), true);
+  assert.equal(page.calls.some(call => call.path === '/api/cobros'), false);
+  assert.deepEqual(page.redirects, []);
+});
+
 test('HU2 UI: permisos del servidor controlan vistas aunque el campo rol diga gerente', async () => {
   const page = startPage({ role: 'gerente', permisos: ['maquinaria.consultar'] });
   await page.ready;

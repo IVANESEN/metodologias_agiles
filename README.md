@@ -229,7 +229,7 @@ La sección **Cobros** muestra el número completo del contrato, cliente, perío
 
 El estado operativo `estado: CONFIRMADO` sigue indicando la reserva de maquinaria. El estado de pago se calcula por separado: `saldo_pendiente = total - SUM(pago.monto)` y `estado_pago` es `PENDIENTE` mientras ese saldo sea mayor que cero; al quedar en cero pasa a `PAGADO`. La forma de pago pactada (incluido crédito) no demuestra que se haya recibido dinero. Los importes se guardan como `NUMERIC` y se calculan en PostgreSQL; no se almacenan copias del saldo o del estado de pago que puedan desincronizarse.
 
-Cada contrato nuevo comienza pendiente por su total. Los contratos históricos conservan sus datos y, al no existir registros previos de pagos en este proyecto, también figuran pendientes hasta registrar los pagos efectivamente recibidos. La migración no inventa abonos ni da por pagados contratos por su estado operativo. El proyecto no dispone de autenticación, roles de aplicación ni sincronización entre sesiones: estos endpoints siguen el acceso existente; la preparación PostgreSQL mantiene la tabla de pagos en el esquema privado, con RLS y sin permisos para los roles de la Data API.
+Cada contrato nuevo comienza pendiente por su total. Los contratos históricos conservan sus datos y, al no existir registros previos de pagos en este proyecto, también figuran pendientes hasta registrar los pagos efectivamente recibidos. La migración no inventa abonos ni da por pagados contratos por su estado operativo. Cobros y registro de pagos requieren una sesión válida y los permisos `cobros.consultar` y `pagos.registrar`: los tienen gerente y admin; residente no puede acceder ni enviando un rol falso. El backend obtiene el rol vigente de la base de datos y rechaza el acceso antes de consultar o modificar el negocio. La preparación PostgreSQL mantiene la tabla de pagos en el esquema privado, con RLS y sin permisos para los roles de la Data API. Ver [HU2](SPRINT3_JOSE_MARIO.md) para matriz, supuestos y prueba local con ambos roles.
 
 - `GET /api/cobros`: devuelve solo contratos con saldo positivo, filtrados en SQL. Una consulta sin pendientes devuelve `[]`.
 - `GET /api/contratos/:id` y la creación de contratos incluyen `total_pagado`, `saldo_pendiente` y `estado_pago`.
@@ -256,7 +256,7 @@ PGlite aplica `database/schema.sql` automáticamente al iniciar. No se necesita 
 
 Ejecutar `npm.cmd test`. Las pruebas usan bases PGlite temporales, sin leer `.env` ni alterar la base configurada. Cubren filtrado en SQL, pagos parciales/completos, actualización del controlador de interfaz sin recarga, errores y reversión, persistencia al reabrir, precisión decimal, concurrencia e idempotencia.
 
-Para revisión manual, iniciar la aplicación contra una base de pruebas y abrir `http://127.0.0.1:3000/#cobros`:
+Para revisión manual, iniciar la aplicación contra una base de pruebas, ingresar como gerente o admin y abrir `http://127.0.0.1:3000/#cobros`:
 
 | Caso | Resultado esperado |
 | --- | --- |

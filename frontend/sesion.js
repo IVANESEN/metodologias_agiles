@@ -38,12 +38,23 @@ window.fetch = async (...args) => {
   return response;
 };
 
+function authorizedSection(node) {
+  for (let current = node; current; current = current.parentNode) {
+    const permission = current.dataset?.permission;
+    if (permission && !hasPermission(permission)) return false;
+  }
+  return true;
+}
+
 function checkSection() {
-  const id = location.hash.slice(1);
+  let id;
+  try { id = decodeURIComponent(location.hash.slice(1)); }
+  catch { return; } // Un fragmento mal formado no debe interrumpir la sesión.
   const section = document.getElementById(id);
-  if (!section?.dataset.permission || hasPermission(section.dataset.permission)) return;
+  // Los enlaces a títulos, listas y botones heredan la restricción del panel.
+  if (!section || authorizedSection(section)) return;
   const fallback = [...document.querySelectorAll('[data-permission][id]')]
-    .find(node => hasPermission(node.dataset.permission) && !node.hidden);
+    .find(node => !node.hidden && authorizedSection(node));
   const target = new URL(location.href);
   target.hash = fallback?.id || '';
   window.history.replaceState(null, '', target);

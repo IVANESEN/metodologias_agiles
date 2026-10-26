@@ -12,10 +12,12 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="alertas.css">
+    <link rel="stylesheet" href="entrega.css">
     <script src="/sesion.js" type="module"></script>
     <script src="/app.js" type="module"></script>
     <script src="/alertas.js" type="module"></script>
     <script src="/recepcion.js" type="module"></script>
+    <script src="/entrega.js" type="module"></script>
   </head>
   <body>
     <a class="skip-link" href="#catalogo" data-permission="maquinaria.consultar" hidden>Ir al catálogo</a>
@@ -101,6 +103,20 @@
                 <button class="primary-button" id="save-signature" type="submit" disabled>Guardar firma</button>
               </div>
             </form>
+            <section class="entrega" id="entrega" aria-labelledby="entrega-title" data-permission="entregas.consultar" hidden>
+              <h4 id="entrega-title">Entrega</h4>
+              <p class="entrega-estado" id="entrega-estado" role="status" aria-live="polite">Sin programar</p>
+              <form class="entrega-form" id="entrega-form" novalidate aria-labelledby="entrega-title" data-permission="entregas.programar" hidden>
+                <div class="field"><label for="entrega-fecha">Fecha de entrega</label><input id="entrega-fecha" name="fecha_entrega" type="date" required aria-describedby="entrega-fecha-error"><p class="field-error" id="entrega-fecha-error" hidden></p></div>
+                <div class="date-fields">
+                  <div class="field"><label for="entrega-desde">Desde</label><input id="entrega-desde" name="hora_desde" type="time" required aria-describedby="entrega-desde-error"><p class="field-error" id="entrega-desde-error" hidden></p></div>
+                  <div class="field"><label for="entrega-hasta">Hasta</label><input id="entrega-hasta" name="hora_hasta" type="time" required aria-describedby="entrega-hasta-error"><p class="field-error" id="entrega-hasta-error" hidden></p></div>
+                </div>
+                <div class="field"><label for="entrega-transportista">Transportista</label><input id="entrega-transportista" name="transportista" type="text" maxlength="160" autocomplete="off" required aria-describedby="entrega-transportista-error"><p class="field-error" id="entrega-transportista-error" hidden></p></div>
+                <p class="form-error" id="entrega-error" role="alert" hidden></p>
+                <button class="primary-button" id="entrega-guardar" type="submit">Programar entrega</button>
+              </form>
+            </section>
             <button class="primary-button" id="new-contract" type="button" data-permission="contratos.crear" hidden>Crear otro contrato <span aria-hidden="true">→</span></button>
           </section>
           <form id="booking-form" novalidate data-permission="contratos.crear" hidden>

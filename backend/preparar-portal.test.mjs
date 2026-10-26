@@ -35,7 +35,7 @@ test('db:portal actualiza una base de producción anterior sin perder datos', as
 
   const logs = [];
   const result = await prepararPortal(database, { demo: true, log: (line) => logs.push(line) });
-  assert.equal(result.tables, 13);
+  assert.equal(result.tables, 14);
   assert.equal(result.demoLoaded, true);
   assert.equal((await embedded.query('SELECT COUNT(*)::int AS n FROM configuracion')).rows[0].n, 7);
   assert.equal((await embedded.query("SELECT rol FROM usuario WHERE correo = '2025-5714@esen.edu.sv'")).rows[0].rol, 'admin');

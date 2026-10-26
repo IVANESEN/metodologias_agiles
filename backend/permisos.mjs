@@ -9,6 +9,7 @@ const COMPARTIDOS = Object.freeze([
   'alertas.consultar',
   'recepciones.crear',
   'recepciones.consultar',
+  'entregas.consultar',
 ]);
 // Portal multirrol. Los roles residente y gerente conservan su matriz original.
 const PORTAL_BASE = Object.freeze(['portal.acceder', 'tienda.consultar', 'pedidos.consultar']);
@@ -16,6 +17,8 @@ const GERENTE = Object.freeze([...COMPARTIDOS,
   // Supuesto HU2: cobros y pagos quedan reservados al gerente.
   'cobros.consultar',
   'pagos.registrar',
+  // HU9a: programar el flete corresponde al gerente de operaciones.
+  'entregas.programar',
   // Permisos reservados: todavía no existen estos módulos ni sus rutas.
   'gastos.aprobar',
   'contratos.modificaciones.autorizar',
@@ -57,6 +60,8 @@ const RUTAS = Object.freeze([
   { operacion: 'contratos.pdf', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)\/pdf$/, permiso: 'contratos.pdf' },
   { operacion: 'recepciones.crear', metodo: 'POST', patron: /^\/api\/recepciones$/, permiso: 'recepciones.crear' },
   { operacion: 'recepciones.consultar', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)\/recepciones$/, permiso: 'recepciones.consultar' },
+  { operacion: 'entregas.programar', metodo: 'POST', patron: /^\/api\/entregas$/, permiso: 'entregas.programar' },
+  { operacion: 'entregas.consultar', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)\/entrega$/, permiso: 'entregas.consultar' },
   { operacion: 'contratos.consultar', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)$/, permiso: 'contratos.consultar' },
   // Portal multirrol: el alcance por rol (propios, proveedor, todos) se aplica en backend/portal.mjs.
   { operacion: 'portal.resumen', metodo: 'GET', patron: /^\/api\/portal\/resumen$/, permiso: 'portal.acceder' },

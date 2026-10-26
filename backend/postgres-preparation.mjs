@@ -12,6 +12,7 @@ const APP_TABLES = [
   'pedido_item',
   'pedido_evento',
   'auditoria',
+  'entrega_programada',
 ];
 const API_ROLES = ['anon', 'authenticated', 'service_role'];
 const INTERNAL_SCHEMAS = new Set(['auth', 'storage', 'realtime', '_realtime', 'extensions',
@@ -80,6 +81,15 @@ const CURRENT_COLUMNS = {
     usuario_id: 'uuid', creado_en: 'timestamp with time zone' },
   auditoria: { id: 'uuid', usuario_id: 'uuid', accion: 'character varying(60)', entidad: 'character varying(40)',
     entidad_id: 'character varying(60)', detalle: 'jsonb', creado_en: 'timestamp with time zone' },
+  entrega_programada: {
+    contrato_id: 'uuid',
+    fecha_entrega: 'date',
+    hora_desde: 'time without time zone',
+    hora_hasta: 'time without time zone',
+    transportista: 'character varying(160)',
+    creado_en: 'timestamp with time zone',
+    actualizado_en: 'timestamp with time zone',
+  },
 };
 // Relaciones obligatorias por tabla: [columna, tabla referenciada (id)].
 const FOREIGN_KEYS = {
@@ -89,6 +99,7 @@ const FOREIGN_KEYS = {
   contrato_maquinaria: [['maquinaria_id', 'maquinaria'], ['contrato_id', 'contrato']],
   pedido: [['cliente_id', 'usuario']], pedido_evento: [['pedido_id', 'pedido']],
   pedido_item: [['pedido_id', 'pedido'], ['maquinaria_id', 'maquinaria']],
+  entrega_programada: [['contrato_id', 'contrato']],
 };
 
 export class PostgresPreparationError extends Error {
@@ -285,6 +296,7 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
       [...actual].sort().join(',') === [...expected].sort().join(',');
     const normalizeExpression = (definition) => (definition || '').replace(/[\s()]/g, '').toLowerCase();
     const primaryKey = table.name === 'contrato_maquinaria' ? ['contrato_id', 'maquinaria_id']
+      : table.name === 'entrega_programada' ? ['contrato_id']
       : table.name === 'configuracion' ? ['clave'] : ['id'];
     const hasPrimaryKey = table.constraints.some((constraint) => constraint.type === 'p' &&
       sameColumns(constraint.columns, primaryKey));
@@ -350,6 +362,25 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         normalizeExpression(column.defaultValue) === 'current_timestamp');
       if (!requiredNotNull || !uniqueMachine || !nonNegativeHours || !photoArray || !photoCount || !createdTimestamp) {
         fail('INCOMPATIBLE_EXISTING_TABLES', 'Las restricciones de recepción no coinciden con las esperadas. Revisa evidencias, horómetro, unicidad, fecha y relación contractual.');
+      }
+    }
+    if (table.name === 'entrega_programada') {
+      const requiredNotNull = Object.keys(CURRENT_COLUMNS.entrega_programada).every((name) =>
+        table.columns.some((column) => column.name === name && column.notNull));
+      const restrictedContract = table.constraints.some((constraint) => constraint.type === 'f' &&
+        constraint.validated && sameColumns(constraint.columns, ['contrato_id']) &&
+        constraint.referenceSchema === schema && constraint.referenceTable === 'contrato' &&
+        sameColumns(constraint.referenceColumns, ['id']) && constraint.onDelete === 'r');
+      const carrierRequired = table.constraints.some((constraint) => constraint.type === 'c' &&
+        constraint.validated && sameColumns(constraint.columns, ['transportista']) &&
+        /^checklengthb?trim(?:bothfrom)?transportista(?:::text)?>=2$/.test(normalizeExpression(constraint.definition)));
+      const orderedWindow = table.constraints.some((constraint) => constraint.type === 'c' &&
+        constraint.validated && sameColumns(constraint.columns, ['hora_desde', 'hora_hasta']) &&
+        normalizeExpression(constraint.definition) === 'checkhora_hasta>hora_desde');
+      const timestamps = ['creado_en', 'actualizado_en'].every((name) => table.columns.some((column) =>
+        column.name === name && normalizeExpression(column.defaultValue) === 'current_timestamp'));
+      if (!requiredNotNull || !restrictedContract || !carrierRequired || !orderedWindow || !timestamps) {
+        fail('INCOMPATIBLE_EXISTING_TABLES', 'Las restricciones de entregas no coinciden con las esperadas. Revisa transportista, ventana horaria, fechas y relación contractual.');
       }
     }
     if (current && !table.rlsEnabled) {

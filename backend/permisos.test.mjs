@@ -11,9 +11,10 @@ import { permisosParaRol } from './permisos.mjs';
 const compartidos = [
   'maquinaria.consultar', 'contratos.crear', 'contratos.consultar',
   'contratos.documento', 'contratos.pdf', 'contratos.firmar', 'alertas.consultar',
-  'recepciones.crear', 'recepciones.consultar',
+  'recepciones.crear', 'recepciones.consultar', 'entregas.consultar',
 ];
-const exclusivos = ['cobros.consultar', 'pagos.registrar', 'gastos.aprobar', 'contratos.modificaciones.autorizar'];
+const exclusivos = ['cobros.consultar', 'pagos.registrar', 'entregas.programar', 'gastos.aprobar',
+  'contratos.modificaciones.autorizar'];
 const ordenar = valores => [...valores].sort();
 const firma = { ancho: 600, alto: 240, trazos: [[[30, 160], [80, 60], [150, 120]]] };
 const entrada = {
@@ -79,7 +80,7 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
   }
   function sinConsultasDeNegocio() {
     assert.equal(transacciones, 0, 'la denegación debe ocurrir antes de abrir una transacción de negocio');
-    assert.deepEqual(consultas.filter(sql => /\b(?:maquinaria|contrato|contrato_maquinaria|recepcion_maquinaria|pago)\b/i.test(sql)), [],
+    assert.deepEqual(consultas.filter(sql => /\b(?:maquinaria|contrato|contrato_maquinaria|recepcion_maquinaria|entrega_programada|pago)\b/i.test(sql)), [],
       'la denegación debe ocurrir antes de consultar o modificar datos de negocio');
   }
   function limpiarObservacion() { consultas.length = 0; transacciones = 0; }
@@ -163,6 +164,8 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
       [`/api/contratos/${id}/pagos?rol=gerente`, { body: { monto: '10.00', rol: 'gerente', permisos: exclusivos },
         headers: { 'X-User-Role': 'gerente', 'X-Rol': 'gerente' } }],
       ['/api/contratos/uuid-invalido/pagos', { body: { monto: '10.00', rol: 'gerente' } }],
+      ['/api/entregas', { body: { contrato_id: id, fecha_entrega: '2037-03-01', hora_desde: '08:00',
+        hora_hasta: '10:00', transportista: 'Transportes HU9a', rol: 'gerente' }, headers: { 'X-Rol': 'gerente' } }],
     ];
     for (const [path, opciones] of casos) {
       limpiarObservacion();
@@ -260,13 +263,15 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
     const desconocidas = ['/api/desconocida', '/api/gastos', '/api/gastos/aprobar',
       `/api/contratos/${id}/modificaciones`, `/api/contratos/${id}/autorizar`,
       `/api/contratos/${id}/pagos/extra`, `/api/contratos/${id}/pagos/`,
-      `/api/contratos/${id}/%70agos`, '/api/cobros/', '/api//cobros', '/api/%63obros'];
+      `/api/contratos/${id}/%70agos`, '/api/cobros/', '/api//cobros', '/api/%63obros',
+      '/api/entregas/', `/api/contratos/${id}/entregas`, `/api/contratos/${id}/entrega/`];
     const metodosErroneos = [
       ['/api/cobros', 'POST'], ['/api/maquinaria', 'POST'], ['/api/reservas/ocupadas', 'POST'],
       ['/api/contratos', 'GET'], ['/api/contratos/por-vencer', 'POST'], ['/api/recepciones', 'GET'],
       [`/api/contratos/${id}/pagos`, 'GET'], [`/api/contratos/${id}/firma`, 'PUT'],
       [`/api/contratos/${id}/documento`, 'POST'], [`/api/contratos/${id}/pdf`, 'POST'],
       [`/api/contratos/${id}/recepciones`, 'POST'], [`/api/contratos/${id}`, 'DELETE'],
+      ['/api/entregas', 'GET'], [`/api/contratos/${id}/entrega`, 'POST'],
     ];
     for (const rol of ['residente', 'gerente']) {
       for (const path of desconocidas) {

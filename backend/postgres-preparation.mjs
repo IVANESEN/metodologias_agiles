@@ -7,6 +7,11 @@ const APP_TABLES = [
   'sesion',
   'token_recuperacion',
   'recepcion_maquinaria',
+  'configuracion',
+  'pedido',
+  'pedido_item',
+  'pedido_evento',
+  'auditoria',
   'entrega_programada',
 ];
 const API_ROLES = ['anon', 'authenticated', 'service_role'];
@@ -25,10 +30,18 @@ const LEGACY_COLUMNS = {
     maquinaria_nombre: 'character varying(120)', tarifa_diaria: 'numeric(12,2)' },
   pago: { id: 'uuid', contrato_id: 'uuid', monto: 'numeric(14,2)',
     creado_en: 'timestamp with time zone' },
+  // Antes del portal multirrol: db:init agrega teléfono, empresa, documento y último acceso.
+  usuario: { id: 'uuid', correo: 'character varying(254)', nombre: 'character varying(160)', clave_hash: 'text',
+    rol: 'character varying(20)', activo: 'boolean', creado_en: 'timestamp with time zone' },
 };
 const CURRENT_COLUMNS = {
   maquinaria: { ...LEGACY_COLUMNS.maquinaria, ubicacion: 'character varying(100)',
-    horometro: 'integer', ficha_tecnica: 'text', foto_url: 'text' },
+    horometro: 'integer', ficha_tecnica: 'text', foto_url: 'text',
+    proveedor_id: 'uuid', marca: 'character varying(80)', modelo: 'character varying(80)', anio: 'integer',
+    condicion: 'character varying(20)', modalidad: 'character varying(10)', precio_venta: 'numeric(14,2)',
+    stock: 'integer', sku: 'character varying(40)', estado_publicacion: 'character varying(12)',
+    motivo_rechazo: 'text', imagenes: 'jsonb', especificaciones: 'jsonb', destacado: 'boolean',
+    creado_en: 'timestamp with time zone', actualizado_en: 'timestamp with time zone' },
   contrato: { ...LEGACY_COLUMNS.contrato, ciudad: 'character varying(100)',
     operador: 'character varying(160)', operador_documento: 'character varying(20)',
     seguro: 'character varying(30)', forma_pago: 'character varying(30)',
@@ -36,7 +49,9 @@ const CURRENT_COLUMNS = {
   contrato_maquinaria: LEGACY_COLUMNS.contrato_maquinaria,
   pago: LEGACY_COLUMNS.pago,
   usuario: { id: 'uuid', correo: 'character varying(254)', nombre: 'character varying(160)', clave_hash: 'text',
-    rol: 'character varying(20)', activo: 'boolean', creado_en: 'timestamp with time zone' },
+    rol: 'character varying(20)', activo: 'boolean', creado_en: 'timestamp with time zone',
+    telefono: 'character varying(30)', empresa: 'character varying(160)', documento: 'character varying(30)',
+    ultimo_acceso: 'timestamp with time zone' },
   sesion: { id: 'uuid', usuario_id: 'uuid', token_hash: 'text', expira_en: 'timestamp with time zone',
     creado_en: 'timestamp with time zone' },
   token_recuperacion: { id: 'uuid', usuario_id: 'uuid', token_hash: 'text', expira_en: 'timestamp with time zone',
@@ -49,6 +64,23 @@ const CURRENT_COLUMNS = {
     fotos: 'jsonb',
     fecha_recepcion: 'timestamp with time zone',
   },
+  configuracion: { clave: 'character varying(40)', valor: 'numeric(12,2)', etiqueta: 'character varying(120)',
+    unidad: 'character varying(12)', descripcion: 'text', minimo: 'numeric(12,2)', maximo: 'numeric(12,2)',
+    actualizado_en: 'timestamp with time zone', actualizado_por: 'uuid' },
+  pedido: { id: 'uuid', numero: 'integer', cliente_id: 'uuid', tipo: 'character varying(10)',
+    estado: 'character varying(14)', ciudad: 'character varying(100)', direccion: 'character varying(240)',
+    metodo_pago: 'character varying(30)', notas: 'text', subtotal: 'numeric(14,2)', descuento: 'numeric(14,2)',
+    operador: 'numeric(14,2)', flete: 'numeric(14,2)', iva: 'numeric(14,2)', deposito: 'numeric(14,2)',
+    total: 'numeric(14,2)', tasas: 'jsonb', atendido_por: 'uuid', motivo: 'text',
+    creado_en: 'timestamp with time zone', actualizado_en: 'timestamp with time zone' },
+  pedido_item: { id: 'uuid', pedido_id: 'uuid', maquinaria_id: 'integer', nombre: 'character varying(120)',
+    proveedor_id: 'uuid', modalidad: 'character varying(10)', cantidad: 'integer', fecha_inicio: 'date',
+    fecha_fin: 'date', dias: 'integer', con_operador: 'boolean', precio_unitario: 'numeric(14,2)',
+    subtotal: 'numeric(14,2)' },
+  pedido_evento: { id: 'uuid', pedido_id: 'uuid', estado: 'character varying(14)', nota: 'text',
+    usuario_id: 'uuid', creado_en: 'timestamp with time zone' },
+  auditoria: { id: 'uuid', usuario_id: 'uuid', accion: 'character varying(60)', entidad: 'character varying(40)',
+    entidad_id: 'character varying(60)', detalle: 'jsonb', creado_en: 'timestamp with time zone' },
   entrega_programada: {
     contrato_id: 'uuid',
     fecha_entrega: 'date',
@@ -58,6 +90,16 @@ const CURRENT_COLUMNS = {
     creado_en: 'timestamp with time zone',
     actualizado_en: 'timestamp with time zone',
   },
+};
+// Relaciones obligatorias por tabla: [columna, tabla referenciada (id)].
+const FOREIGN_KEYS = {
+  maquinaria: [], usuario: [], configuracion: [], auditoria: [],
+  sesion: [['usuario_id', 'usuario']], token_recuperacion: [['usuario_id', 'usuario']],
+  contrato: [['maquinaria_id', 'maquinaria']], pago: [['contrato_id', 'contrato']],
+  contrato_maquinaria: [['maquinaria_id', 'maquinaria'], ['contrato_id', 'contrato']],
+  pedido: [['cliente_id', 'usuario']], pedido_evento: [['pedido_id', 'pedido']],
+  pedido_item: [['pedido_id', 'pedido'], ['maquinaria_id', 'maquinaria']],
+  entrega_programada: [['contrato_id', 'contrato']],
 };
 
 export class PostgresPreparationError extends Error {
@@ -254,7 +296,8 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
       [...actual].sort().join(',') === [...expected].sort().join(',');
     const normalizeExpression = (definition) => (definition || '').replace(/[\s()]/g, '').toLowerCase();
     const primaryKey = table.name === 'contrato_maquinaria' ? ['contrato_id', 'maquinaria_id']
-      : table.name === 'entrega_programada' ? ['contrato_id'] : ['id'];
+      : table.name === 'entrega_programada' ? ['contrato_id']
+      : table.name === 'configuracion' ? ['clave'] : ['id'];
     const hasPrimaryKey = table.constraints.some((constraint) => constraint.type === 'p' &&
       sameColumns(constraint.columns, primaryKey));
     const recepcionForeignKey = table.name === 'recepcion_maquinaria' &&
@@ -262,10 +305,7 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         sameColumns(constraint.columns, ['contrato_id', 'maquinaria_id']) &&
         constraint.referenceSchema === schema && constraint.referenceTable === 'contrato_maquinaria' &&
         sameColumns(constraint.referenceColumns, ['contrato_id', 'maquinaria_id']) && constraint.onDelete === 'r');
-    const foreignKeys = ['maquinaria', 'usuario'].includes(table.name) ? [] : ['sesion', 'token_recuperacion'].includes(table.name)
-      ? [['usuario_id', 'usuario']] : table.name === 'contrato'
-      ? [['maquinaria_id', 'maquinaria']] : ['pago', 'entrega_programada'].includes(table.name) ? [['contrato_id', 'contrato']]
-        : [['maquinaria_id', 'maquinaria'], ['contrato_id', 'contrato']];
+    const foreignKeys = FOREIGN_KEYS[table.name] ?? [];
     const hasForeignKeys = table.name === 'recepcion_maquinaria'
       ? recepcionForeignKey
       : foreignKeys.every(([column, referenceTable]) => table.constraints.some((constraint) =>
@@ -277,7 +317,8 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
     }
     if (['usuario', 'sesion', 'token_recuperacion'].includes(table.name)) {
       const uniqueColumn = table.name === 'usuario' ? 'correo' : 'token_hash';
-      const notNull = Object.keys(CURRENT_COLUMNS[table.name]).filter(name => name !== 'usado_en').every(name =>
+      const optional = ['usado_en', 'telefono', 'empresa', 'documento', 'ultimo_acceso'];
+      const notNull = Object.keys(CURRENT_COLUMNS[table.name]).filter(name => !optional.includes(name)).every(name =>
         table.columns.some(column => column.name === name && column.notNull));
       const unique = table.constraints.some(constraint => constraint.type === 'u' &&
         sameColumns(constraint.columns, [uniqueColumn]));

@@ -11,6 +11,7 @@ import { normalizeSignature } from '../frontend/firma-datos.mjs';
 import { AuthError, handleAuthRoutes, guardSession, guardPermission, checkRequestOrigin } from './auth.mjs';
 import { handleRecoveryRoutes } from './recuperacion.mjs';
 import { resolverRutaProtegida } from './permisos.mjs';
+import { handlePortalRoute, handleRegistrationRoute } from './portal.mjs';
 
 const defaultFrontendDir = fileURLToPath(new URL('../frontend/', import.meta.url));
 const MAX_BODY_BYTES = 16_384;
@@ -122,7 +123,8 @@ export function validateMachineryFilters(searchParams) {
 }
 
 export async function findMachinery(database, filters) {
-  const conditions = [];
+  // Los contratos de obra solo usan equipos publicados que admiten renta.
+  const conditions = ["m.estado_publicacion = 'ACTIVO'", "m.modalidad <> 'VENTA'"];
   const values = [];
   const parameter = (value) => { values.push(value); return `$${values.length}`; };
   if (filters.disponible !== undefined) {
@@ -139,6 +141,10 @@ export async function findMachinery(database, filters) {
       SELECT 1 FROM contrato_maquinaria cm JOIN contrato c ON c.id = cm.contrato_id
       WHERE cm.maquinaria_id = m.id AND c.estado = 'CONFIRMADO'
       AND c.fecha_inicio <= ${end}::date AND c.fecha_fin >= ${start}::date
+    )`, `NOT EXISTS (
+      SELECT 1 FROM pedido_item pi JOIN pedido p ON p.id = pi.pedido_id
+      WHERE pi.maquinaria_id = m.id AND pi.modalidad = 'RENTA' AND p.estado IN ('PENDIENTE', 'APROBADO', 'EN_ENTREGA')
+      AND pi.fecha_inicio <= ${end}::date AND pi.fecha_fin >= ${start}::date
     )`);
   }
   const { rows } = await database.query(
@@ -458,10 +464,18 @@ export async function saveContract(database, input) {
     if (inactive) {
       throw new ApiError(409, 'MACHINERY_UNAVAILABLE', `${inactive.nombre} no está disponible para alquiler.`);
     }
+    // Las reservas del portal (pedidos de renta activos) también ocupan el equipo.
     const overlap = await tx.query(
-      `SELECT cm.maquinaria_id FROM contrato_maquinaria cm JOIN contrato c ON c.id = cm.contrato_id
-       WHERE cm.maquinaria_id = ANY($1::integer[]) AND c.estado = 'CONFIRMADO'
-       AND c.fecha_inicio <= $3::date AND c.fecha_fin >= $2::date ORDER BY cm.maquinaria_id LIMIT 1`,
+      `SELECT maquinaria_id FROM (
+         SELECT cm.maquinaria_id FROM contrato_maquinaria cm JOIN contrato c ON c.id = cm.contrato_id
+         WHERE cm.maquinaria_id = ANY($1::integer[]) AND c.estado = 'CONFIRMADO'
+         AND c.fecha_inicio <= $3::date AND c.fecha_fin >= $2::date
+         UNION ALL
+         SELECT pi.maquinaria_id FROM pedido_item pi JOIN pedido p ON p.id = pi.pedido_id
+         WHERE pi.maquinaria_id = ANY($1::integer[]) AND pi.modalidad = 'RENTA'
+         AND p.estado IN ('PENDIENTE', 'APROBADO', 'EN_ENTREGA')
+         AND pi.fecha_inicio <= $3::date AND pi.fecha_fin >= $2::date
+       ) ocupadas ORDER BY maquinaria_id LIMIT 1`,
       [input.maquinaria_ids, input.fecha_inicio, input.fecha_fin],
     );
     if (overlap.rows.length) {
@@ -566,6 +580,7 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
       if (requireAuth || path.startsWith('/api/auth/')) checkRequestOrigin(request, { secureCookies, appUrl });
       if (await handleAuthRoutes(authContext)) return;
       if (await handleRecoveryRoutes(authContext)) return;
+      if (await handleRegistrationRoute(authContext)) return;
       if (requireAuth && await guardSession(authContext)) return;
       const ruta = resolverRutaProtegida(request.method, path);
       if (ruta?.metodoNoPermitido || (path === '/api/health' && request.method !== 'GET')) {
@@ -587,6 +602,9 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
           database: database.provider || 'postgresql',
           ...(commit ? { commit } : {}),
         });
+      }
+      if (ruta?.operacion?.startsWith('portal.')) {
+        return await handlePortalRoute({ ...authContext, ruta, url });
       }
       if (ruta?.operacion === 'maquinaria.consultar') {
         const filters = validateMachineryFilters(url.searchParams);

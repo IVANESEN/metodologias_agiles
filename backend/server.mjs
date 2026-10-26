@@ -1,6 +1,7 @@
 import { createServer } from './app.mjs';
 import { createDatabase, initializeDatabase, safeDatabaseError } from './database.mjs';
 import { assertPostgresReady } from './postgres-preparation.mjs';
+import { loadDemoData } from './demo-data.mjs';
 
 const configuredPort = process.env.PORT || process.env.SERVER_PORT || '3000';
 const port = Number(configuredPort);
@@ -15,6 +16,8 @@ if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     database = await createDatabase();
     if (database.provider === 'pglite') {
       await initializeDatabase(database);
+      // En desarrollo local se cargan las cuentas y el catálogo de demostración.
+      if (process.env.DEMO_DATA !== 'false') await loadDemoData(database);
     } else {
       await database.verifyConnection();
       await assertPostgresReady(database);

@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS usuario (
   correo VARCHAR(254) UNIQUE NOT NULL CHECK (correo = lower(trim(correo))),
   nombre VARCHAR(160) NOT NULL CHECK (length(trim(nombre)) > 0),
   clave_hash TEXT NOT NULL,
-  rol VARCHAR(20) NOT NULL DEFAULT 'residente' CHECK (rol IN ('residente','gerente')),
+  rol VARCHAR(20) NOT NULL DEFAULT 'residente' CHECK (rol IN ('residente','gerente','admin','empleado','proveedor','cliente')),
   activo BOOLEAN NOT NULL DEFAULT TRUE,
   creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -150,3 +150,116 @@ CREATE TABLE IF NOT EXISTS recepcion_maquinaria (
 
 CREATE INDEX IF NOT EXISTS recepcion_contrato_idx
   ON recepcion_maquinaria (contrato_id, fecha_recepcion DESC);
+
+-- Portal multirrol (admin, empleado, proveedor, cliente). Columnas aditivas:
+-- los registros históricos conservan sus valores y reciben los predeterminados.
+-- Las bases creadas antes de este cambio necesitan la migración revisada
+-- database/migrations/20261026_portal_multirrol.sql para ampliar los roles.
+ALTER TABLE usuario ADD COLUMN IF NOT EXISTS telefono VARCHAR(30);
+ALTER TABLE usuario ADD COLUMN IF NOT EXISTS empresa VARCHAR(160);
+ALTER TABLE usuario ADD COLUMN IF NOT EXISTS documento VARCHAR(30);
+ALTER TABLE usuario ADD COLUMN IF NOT EXISTS ultimo_acceso TIMESTAMPTZ;
+
+-- Ficha comercial del producto (alta tipo tienda en línea para proveedores).
+-- proveedor_id NULL identifica la flota propia de la constructora.
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS proveedor_id UUID;
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS marca VARCHAR(80);
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS modelo VARCHAR(80);
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS anio INTEGER CHECK (anio IS NULL OR anio BETWEEN 1950 AND 2100);
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS condicion VARCHAR(20)
+  CHECK (condicion IS NULL OR condicion IN ('NUEVO', 'USADO', 'REACONDICIONADO'));
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS modalidad VARCHAR(10) NOT NULL DEFAULT 'RENTA'
+  CHECK (modalidad IN ('RENTA', 'VENTA', 'AMBAS'));
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS precio_venta NUMERIC(14, 2) CHECK (precio_venta IS NULL OR precio_venta > 0);
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS stock INTEGER NOT NULL DEFAULT 1 CHECK (stock >= 0);
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS sku VARCHAR(40);
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS estado_publicacion VARCHAR(12) NOT NULL DEFAULT 'ACTIVO'
+  CHECK (estado_publicacion IN ('BORRADOR', 'PENDIENTE', 'ACTIVO', 'RECHAZADO', 'ARCHIVADO'));
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT;
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS imagenes JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS especificaciones JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS destacado BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE maquinaria ADD COLUMN IF NOT EXISTS actualizado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+CREATE INDEX IF NOT EXISTS maquinaria_proveedor_idx ON maquinaria (proveedor_id);
+
+-- Tasas que el administrador ajusta sin desplegar código.
+CREATE TABLE IF NOT EXISTS configuracion (
+  clave VARCHAR(40) PRIMARY KEY,
+  valor NUMERIC(12, 2) NOT NULL CHECK (valor >= 0),
+  etiqueta VARCHAR(120) NOT NULL,
+  unidad VARCHAR(12) NOT NULL,
+  descripcion TEXT NOT NULL,
+  minimo NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  maximo NUMERIC(12, 2) NOT NULL,
+  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  actualizado_por UUID
+);
+
+-- Pedidos del portal: compras y reservas de renta hechas por clientes.
+CREATE TABLE IF NOT EXISTS pedido (
+  id UUID PRIMARY KEY,
+  numero INTEGER UNIQUE NOT NULL CHECK (numero > 0),
+  cliente_id UUID NOT NULL REFERENCES usuario(id) ON DELETE RESTRICT,
+  tipo VARCHAR(10) NOT NULL CHECK (tipo IN ('COMPRA', 'RENTA', 'MIXTO')),
+  estado VARCHAR(14) NOT NULL DEFAULT 'PENDIENTE'
+    CHECK (estado IN ('PENDIENTE', 'APROBADO', 'EN_ENTREGA', 'COMPLETADO', 'CANCELADO', 'RECHAZADO')),
+  ciudad VARCHAR(100) NOT NULL CHECK (length(trim(ciudad)) >= 2),
+  direccion VARCHAR(240) NOT NULL CHECK (length(trim(direccion)) >= 5),
+  metodo_pago VARCHAR(30) NOT NULL CHECK (metodo_pago IN ('EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'CREDITO_30_DIAS')),
+  notas TEXT CHECK (notas IS NULL OR length(notas) <= 1000),
+  subtotal NUMERIC(14, 2) NOT NULL CHECK (subtotal >= 0),
+  descuento NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (descuento >= 0),
+  operador NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (operador >= 0),
+  flete NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (flete >= 0),
+  iva NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (iva >= 0),
+  deposito NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (deposito >= 0),
+  total NUMERIC(14, 2) NOT NULL CHECK (total > 0),
+  tasas JSONB NOT NULL,
+  atendido_por UUID,
+  motivo TEXT CHECK (motivo IS NULL OR length(motivo) <= 500),
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS pedido_cliente_idx ON pedido (cliente_id, creado_en DESC);
+
+CREATE TABLE IF NOT EXISTS pedido_item (
+  id UUID PRIMARY KEY,
+  pedido_id UUID NOT NULL REFERENCES pedido(id) ON DELETE CASCADE,
+  maquinaria_id INTEGER NOT NULL REFERENCES maquinaria(id) ON DELETE RESTRICT,
+  nombre VARCHAR(120) NOT NULL,
+  proveedor_id UUID,
+  modalidad VARCHAR(10) NOT NULL CHECK (modalidad IN ('COMPRA', 'RENTA')),
+  cantidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad > 0),
+  fecha_inicio DATE,
+  fecha_fin DATE,
+  dias INTEGER CHECK (dias IS NULL OR dias > 0),
+  con_operador BOOLEAN NOT NULL DEFAULT FALSE,
+  precio_unitario NUMERIC(14, 2) NOT NULL CHECK (precio_unitario > 0),
+  subtotal NUMERIC(14, 2) NOT NULL CHECK (subtotal > 0),
+  CHECK (modalidad = 'COMPRA' OR (fecha_inicio IS NOT NULL AND fecha_fin IS NOT NULL AND fecha_fin >= fecha_inicio AND cantidad = 1))
+);
+CREATE INDEX IF NOT EXISTS pedido_item_maquinaria_idx ON pedido_item (maquinaria_id, fecha_inicio, fecha_fin);
+CREATE INDEX IF NOT EXISTS pedido_item_pedido_idx ON pedido_item (pedido_id);
+
+CREATE TABLE IF NOT EXISTS pedido_evento (
+  id UUID PRIMARY KEY,
+  pedido_id UUID NOT NULL REFERENCES pedido(id) ON DELETE CASCADE,
+  estado VARCHAR(14) NOT NULL,
+  nota TEXT,
+  usuario_id UUID,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS pedido_evento_pedido_idx ON pedido_evento (pedido_id, creado_en);
+
+-- Bitácora de acciones administrativas; no guarda contraseñas ni tokens.
+CREATE TABLE IF NOT EXISTS auditoria (
+  id UUID PRIMARY KEY,
+  usuario_id UUID,
+  accion VARCHAR(60) NOT NULL,
+  entidad VARCHAR(40) NOT NULL,
+  entidad_id VARCHAR(60),
+  detalle JSONB NOT NULL DEFAULT '{}'::jsonb,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS auditoria_fecha_idx ON auditoria (creado_en DESC);

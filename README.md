@@ -1,5 +1,10 @@
 
-# Constructora El Salvador
+# Constructora El Salvador · ICI Maquinaria
+
+**Sprint 4:** portal multirrol (cliente, proveedor, empleado y administración) con tienda,
+cotizador, pedidos, alta de productos de proveedores, tasas configurables y auditoría.
+Ver [SPRINT4_PORTAL_ICI.md](SPRINT4_PORTAL_ICI.md) para pantallas, cuentas de prueba,
+escenarios y migración.
 
 Sistema de alquiler de maquinaria. Incluye HU3 (consulta por tipo, fechas y ciudad) y contratos con una o varias máquinas.
 

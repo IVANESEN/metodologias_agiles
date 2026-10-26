@@ -112,7 +112,7 @@ export async function handleAuthRoutes({ request, response, path, database, json
   return true;
 }
 const PUBLIC_FILES = new Set(['/login.html','/login.js','/auth-form.js','/recuperar.html','/recuperar.js',
-  '/restablecer.html','/restablecer.js','/registro.html','/registro.js','/styles.css','/favicon.svg']);
+  '/restablecer.html','/restablecer.js','/registro.html','/registro.js','/creditos.html','/styles.css','/favicon.svg']);
 // Recursos estáticos sin datos (marca, estilos, iconos, fotos de catálogo).
 const PUBLIC_PREFIXES = ['/assets/'];
 export async function guardSession(context) {

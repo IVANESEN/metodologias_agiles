@@ -1,15 +1,54 @@
 <!doctype html>
-<html lang="es"><head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0F1EAD">
   <meta name="referrer" content="no-referrer">
-  <title>Recuperar acceso · Constructora El Salvador</title>
-  <link rel="stylesheet" href="/styles.css"><link rel="icon" href="/favicon.svg">
+  <title>Recuperar acceso · ICI Maquinaria</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/ici.css">
+  <script src="/assets/js/auth-ui.js" type="module"></script>
   <script src="/recuperar.js" type="module"></script>
-</head><body><main class="auth-page">
-  <p class="eyebrow">CONSTRUCTORA EL SALVADOR</p><h1>Recuperar acceso</h1>
-  <p>Escribe el correo de tu cuenta para solicitar un enlace de restablecimiento.</p>
-  <form class="auth-form"><div class="field"><label for="correo">Correo electrónico</label>
-    <input id="correo" name="correo" type="email" maxlength="254" autocomplete="email" required></div>
-    <p id="auth-message" role="status" aria-live="polite"></p><button class="primary-button" type="submit">Solicitar enlace</button>
-  </form><a href="/login.html">Volver a iniciar sesión</a>
-</main></body></html>
+</head>
+<body>
+<main class="auth">
+  <section class="auth-visual" aria-label="Maquinaria pesada en obra">
+    <img src="/assets/img/login-obra.jpg" alt="Tractor de oruga sobre un terraplén al atardecer" fetchpriority="high">
+    <a class="auth-brand" href="/login.html" aria-label="ICI Maquinaria, inicio"><span data-logo></span></a>
+    <div class="auth-claim">
+      <span class="eyebrow on-dark">Renta y venta de maquinaria pesada</span>
+      <h2>recupera tu acceso<b>en minutos</b></h2>
+      <p>Te enviamos un enlace seguro que vence en 30 minutos. Si no solicitaste el cambio, tu cuenta sigue protegida.</p>
+      <div class="claim-stats">
+        <div><strong>Renta</strong><span>por día, semana o mes</span></div>
+        <div><strong>Compra</strong><span>equipo nuevo y usado</span></div>
+        <div><strong>Entrega</strong><span>directo en tu obra</span></div>
+      </div>
+    </div>
+  </section>
+  <section class="auth-panel">
+    <div class="auth-panel-inner">
+      <a class="auth-mobile-brand" href="/login.html" aria-label="ICI Maquinaria"><span data-logo></span></a>
+      <a class="btn btn-ghost btn-sm" href="/login.html" style="justify-self:start"><span data-icon="arrowLeft" data-class="icon icon-sm"></span>Volver</a>
+      <header>
+        <span class="eyebrow">Recuperar acceso</span>
+        <h1 style="margin-top:8px">¿Olvidaste tu contraseña?</h1>
+        <p class="lead">Escribe el correo de tu cuenta y te enviaremos un enlace para crear una nueva.</p>
+      </header>
+      <form class="auth-form" novalidate>
+        <div class="field"><label for="correo">Correo electrónico</label>
+          <div class="input-group"><span data-icon="mail"></span><input class="input" id="correo" name="correo" type="email" maxlength="254" autocomplete="email" placeholder="nombre@empresa.com" required></div></div>
+        <p id="auth-message" role="status" aria-live="polite"></p>
+        <button class="btn btn-lg btn-block" type="submit">Enviar enlace</button>
+      </form>
+      <div class="notice"><span data-icon="info"></span><p>¿Sin acceso a tu correo? Un empleado de ICI puede generarte una contraseña temporal desde la gestión de usuarios.</p></div>
+      <p class="legal">ICI El Salvador · icielsalvador.com · <a href="/creditos.html">Créditos de fotografía</a></p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

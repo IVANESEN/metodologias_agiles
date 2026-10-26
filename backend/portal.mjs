@@ -28,6 +28,7 @@ export const TIPOS_MAQUINARIA = Object.freeze(['Excavadora', 'Retroexcavadora', 
   'Compactador', 'Motoniveladora', 'Camión de volteo', 'Grúa', 'Minicargador', 'Manipulador telescópico',
   'Mezcladora de concreto', 'Otro']);
 const STAFF = ['admin', 'empleado'];
+const PAGOS = Object.freeze({ EFECTIVO: 'Efectivo', TRANSFERENCIA: 'Transferencia bancaria', CHEQUE: 'Cheque', CREDITO_30_DIAS: 'Crédito a 30 días' });
 
 const fail = (status, code, message, fields) => { throw new AuthError(status, code, message, fields); };
 const invalid = (message, fields) => fail(400, 'VALIDATION_ERROR', message, fields);
@@ -98,7 +99,9 @@ export function temporaryPassword() {
 // ---------------------------------------------------------------- tasas
 export async function readConfig(db) {
   const { rows } = await db.query(`SELECT clave, valor, etiqueta, unidad, descripcion, minimo, maximo,
-    actualizado_en::text, actualizado_por FROM configuracion ORDER BY clave`);
+    actualizado_en::text, actualizado_por FROM configuracion ORDER BY CASE clave WHEN 'iva' THEN 1 WHEN 'flete_base' THEN 2
+    WHEN 'tarifa_operador' THEN 3 WHEN 'descuento_semanal' THEN 4 WHEN 'descuento_mensual' THEN 5 WHEN 'deposito_garantia' THEN 6
+    WHEN 'comision_proveedor' THEN 7 ELSE 8 END, clave`);
   const list = rows.map((row) => ({ ...row, valor: Number(row.valor), minimo: Number(row.minimo), maximo: Number(row.maximo) }));
   const defaults = { iva: 13, comision_proveedor: 8, deposito_garantia: 20, flete_base: 85,
     descuento_semanal: 5, descuento_mensual: 12, tarifa_operador: 55 };
@@ -499,7 +502,7 @@ async function orderDetail(db, user, id) {
   const result = {
     id: order.id, numero: order.numero, numero_visible: `PED-${order.numero}`, tipo: order.tipo, estado: order.estado,
     ciudad: order.ciudad, direccion: order.direccion, metodo_pago: order.metodo_pago,
-    metodo_pago_texto: FORMAS_PAGO[order.metodo_pago] || order.metodo_pago, notas: order.notas, motivo: order.motivo,
+    metodo_pago_texto: PAGOS[order.metodo_pago] || order.metodo_pago, notas: order.notas, motivo: order.motivo,
     creado_en: order.creado_en, actualizado_en: order.actualizado_en, atendido_por: order.atendido_por_nombre,
     cliente: { nombre: order.cliente, correo: order.cliente_correo, empresa: order.cliente_empresa, telefono: order.cliente_telefono },
     items: visibles.map((item) => ({
@@ -680,7 +683,8 @@ async function dashboard(db, user) {
     };
     result.pedidos = (await listOrders(db, user, new URLSearchParams())).slice(0, 6);
     const { rows: top } = await db.query(`SELECT m.id, m.nombre, COUNT(i.id)::int AS pedidos, COALESCE(SUM(i.subtotal),0) AS monto
-      FROM maquinaria m LEFT JOIN pedido_item i ON i.maquinaria_id = m.id
+      FROM maquinaria m LEFT JOIN (pedido_item i JOIN pedido pe ON pe.id = i.pedido_id
+        AND pe.estado NOT IN ('CANCELADO', 'RECHAZADO')) ON i.maquinaria_id = m.id
       WHERE m.proveedor_id = $1 GROUP BY m.id, m.nombre ORDER BY monto DESC, m.nombre LIMIT 5`, [user.id]);
     result.top = top.map((row) => ({ ...row, monto: Number(row.monto) }));
   } else {
@@ -758,7 +762,7 @@ export async function handlePortalRoute(context) {
     case 'portal.reportes': return json(response, 200, await reports(database));
     case 'portal.configuracion.consultar': {
       const { list } = await readConfig(database);
-      return json(response, 200, { tasas: list, tipos: TIPOS_MAQUINARIA, formas_pago: FORMAS_PAGO });
+      return json(response, 200, { tasas: list, tipos: TIPOS_MAQUINARIA, formas_pago: PAGOS });
     }
     case 'portal.configuracion.editar': {
       const body = await readJson(request);

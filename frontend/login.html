@@ -1,17 +1,69 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Iniciar sesión · Constructora El Salvador</title>
-  <link rel="stylesheet" href="/styles.css"><link rel="icon" href="/favicon.svg">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0F1EAD">
+  <title>Iniciar sesión · ICI Maquinaria</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/ici.css">
+  <script src="/assets/js/auth-ui.js" type="module"></script>
   <script src="/login.js" type="module"></script>
 </head>
-<body><main class="auth-page">
-  <p class="eyebrow">CONSTRUCTORA EL SALVADOR</p><h1>Iniciar sesión</h1>
-  <form class="auth-form">
-    <div class="field"><label for="correo">Correo electrónico</label><input id="correo" name="correo" type="email" maxlength="254" autocomplete="username" required></div>
-    <div class="field"><label for="clave">Contraseña</label><input id="clave" name="clave" type="password" maxlength="256" autocomplete="current-password" required></div>
-    <p id="auth-message" role="alert"></p><button class="primary-button" type="submit">Entrar</button>
-  </form>
-  <a href="/recuperar.html">¿Olvidaste tu contraseña?</a>
-</main></body></html>
+<body>
+<main class="auth">
+  <section class="auth-visual" aria-label="Maquinaria pesada en obra">
+    <img src="/assets/img/login-obra.jpg" alt="Tractor de oruga sobre un terraplén al atardecer" fetchpriority="high">
+    <a class="auth-brand" href="/login.html" aria-label="ICI Maquinaria, inicio"><span data-logo></span></a>
+    <div class="auth-claim">
+      <span class="eyebrow on-dark">Renta y venta de maquinaria pesada</span>
+      <h2>la maquinaria que<b>mueve tu obra</b></h2>
+      <p>Reserva equipo con fechas garantizadas, compra con respaldo y sigue cada entrega desde un solo lugar.</p>
+      <div class="claim-stats">
+        <div><strong>Renta</strong><span>por día, semana o mes</span></div>
+        <div><strong>Compra</strong><span>equipo nuevo y usado</span></div>
+        <div><strong>Entrega</strong><span>directo en tu obra</span></div>
+      </div>
+    </div>
+  </section>
+  <section class="auth-panel">
+    <div class="auth-panel-inner">
+      <a class="auth-mobile-brand" href="/login.html" aria-label="ICI Maquinaria"><span data-logo></span></a>
+      <header>
+        <span class="eyebrow">Bienvenido de vuelta</span>
+        <h1 style="margin-top:8px">Inicia sesión</h1>
+        <p class="lead">Accede con el correo de tu cuenta de cliente, proveedor o equipo ICI.</p>
+      </header>
+      <form class="auth-form" novalidate>
+        <div class="field">
+          <label for="correo">Correo electrónico</label>
+          <div class="input-group"><span data-icon="mail"></span>
+            <input class="input" id="correo" name="correo" type="email" maxlength="254" autocomplete="username" placeholder="nombre@empresa.com" required></div>
+        </div>
+        <div class="field">
+          <label for="clave">Contraseña</label>
+          <div class="input-group"><span data-icon="lock"></span>
+            <input class="input" id="clave" name="clave" type="password" maxlength="256" autocomplete="current-password" placeholder="Tu contraseña" required></div>
+        </div>
+        <div class="auth-row">
+          <label class="check"><input type="checkbox" id="recordar" checked> Recordar mi correo</label>
+          <a href="/recuperar.html">¿Olvidaste tu contraseña?</a>
+        </div>
+        <p id="auth-message" role="alert"></p>
+        <button class="btn btn-lg btn-block" type="submit">Entrar a la plataforma</button>
+      </form>
+      <div class="auth-roles" aria-label="Tipos de cuenta">
+        <span><span data-icon="hardhat" data-class="icon icon-sm"></span>Clientes</span>
+        <span><span data-icon="truck" data-class="icon icon-sm"></span>Proveedores</span>
+        <span><span data-icon="briefcase" data-class="icon icon-sm"></span>Equipo ICI</span>
+      </div>
+      <p class="auth-footer">¿Tu empresa aún no tiene cuenta? <a href="/registro.html">Crea una cuenta de cliente</a></p>
+      <p class="legal">ICI El Salvador · icielsalvador.com · <a href="/creditos.html">Créditos de fotografía</a></p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

@@ -129,7 +129,7 @@ export async function loadDemoData(database, { logger = console } = {}) {
           anio, condicion, modalidad, precio_venta, stock, sku, estado_publicacion, imagenes, especificaciones, destacado,
           foto_url, proveedor_id, disponible)
         VALUES ($1,$2,$3,$4,$5::numeric,$6,$7,$8,$9,$10,$11,$12,$13::numeric,$14,$15,$16,$17::jsonb,$18::jsonb,$19,$20,$21,TRUE)
-        ON CONFLICT (id) DO UPDATE SET marca=EXCLUDED.marca, modelo=EXCLUDED.modelo, anio=EXCLUDED.anio,
+        ON CONFLICT (id) DO UPDATE SET nombre=EXCLUDED.nombre, marca=EXCLUDED.marca, modelo=EXCLUDED.modelo, anio=EXCLUDED.anio,
           condicion=EXCLUDED.condicion, horometro=COALESCE(maquinaria.horometro, EXCLUDED.horometro),
           ubicacion=COALESCE(maquinaria.ubicacion, EXCLUDED.ubicacion), sku=EXCLUDED.sku, imagenes=EXCLUDED.imagenes,
           especificaciones=EXCLUDED.especificaciones, destacado=EXCLUDED.destacado, foto_url=EXCLUDED.foto_url,

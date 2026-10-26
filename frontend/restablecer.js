@@ -10,7 +10,8 @@ bindAuthForm({ endpoint: '/api/auth/restablecer', payload: form => {
   if (form.get('clave') !== form.get('confirmacion')) throw new Error('Las contraseñas no coinciden.');
   return { token, clave: form.get('clave') };
 }, onSuccess: (result, message, form) => {
+  message.classList.add('ok');
   message.textContent = result.message; form.reset();
   form.querySelectorAll('input').forEach(input => { input.disabled = true; });
-  form.querySelector('button').hidden = true;
+  form.querySelector('button[type="submit"]').hidden = true;
 } });

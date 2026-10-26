@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Sprint 0: catálogo y contratos de alquiler de maquinaria",
+  "description": "Plataforma ICI de renta y venta de maquinaria pesada: portal multirrol, contratos y operación",
   "engines": {
     "node": ">=24 <25"
   },
@@ -13,7 +13,8 @@
     "test": "node --test backend/*.test.mjs",
     "db:inspect": "node --env-file-if-exists=.env backend/inspect-db.mjs",
     "db:init": "node --env-file-if-exists=.env backend/init-db.mjs",
-    "db:verify": "node --env-file-if-exists=.env backend/verify-db.mjs"
+    "db:verify": "node --env-file-if-exists=.env backend/verify-db.mjs",
+    "db:demo": "node --env-file-if-exists=.env backend/cargar-demo.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",

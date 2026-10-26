@@ -207,8 +207,8 @@ No se ejecutan migraciones remotas durante las pruebas automatizadas.
 ## Programación de entrega (HU9a)
 
 El detalle del contrato incluye el bloque **Entrega**, que muestra **Sin programar** o la
-fecha, la ventana horaria y el transportista del flete. El gerente puede programarlo o
-reprogramarlo; el residente solo lo consulta.
+fecha, la ventana horaria y el transportista del flete. El gerente y el admin pueden
+programarlo o reprogramarlo; el empleado y el residente solo lo consultan.
 
 - `POST /api/entregas` requiere `entregas.programar`. Crea o reemplaza la única
   programación del contrato; un reintento idéntico no la duplica.
@@ -218,7 +218,8 @@ reprogramarlo; el residente solo lo consulta.
   no es posterior a la inicial, o si la fecha no está entre hoy (hora de El Salvador) y el
   fin del contrato.
 
-Antes de desplegar se debe aplicar la migración `database/migrations/20261026_hu9a.sql`;
+Antes de desplegar, la tabla `entrega_programada` debe existir en la base (con `db:portal`
+o con la migración `database/migrations/20261026_hu9a.sql`, según el estado de la base);
 sin ella el servidor no arranca. Ver [SPRINT3_KEVIN.md](SPRINT3_KEVIN.md) para el orden
 obligatorio, los supuestos y las pruebas.
 

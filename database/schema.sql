@@ -266,7 +266,7 @@ CREATE INDEX IF NOT EXISTS auditoria_fecha_idx ON auditoria (creado_en DESC);
 
 -- Sprint 3 HU9a: programación de entrega y transportista. Supuesto: un solo flete
 -- por contrato, aunque incluya varias máquinas. En PostgreSQL, el RLS y el REVOKE
--- los aplican db:init (preparación explícita) o la migración manual
+-- los aplican db:init, db:portal (preparación explícita) o la migración manual
 -- 20261026_hu9a.sql; PGlite no tiene RLS.
 CREATE TABLE IF NOT EXISTS entrega_programada (
   contrato_id UUID PRIMARY KEY REFERENCES contrato(id) ON DELETE RESTRICT,

@@ -6,11 +6,11 @@ import { webcrypto } from 'node:crypto';
 import * as signatureData from '../frontend/firma-datos.mjs';
 
 const html = await readFile(new URL('../frontend/index.html', import.meta.url), 'utf8');
-const sources = Object.fromEntries(await Promise.all(['sesion.js', 'app.js', 'alertas.js', 'cobros.mjs', 'firma.js', 'recepcion.js'].map(async file => [file,
+const sources = Object.fromEntries(await Promise.all(['sesion.js', 'app.js', 'alertas.js', 'cobros.mjs', 'firma.js', 'recepcion.js', 'entrega.js'].map(async file => [file,
   (await readFile(new URL(`../frontend/${file}`, import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, ''),
 ])));
-const commonPermissions = ['maquinaria.consultar', 'contratos.crear', 'contratos.consultar', 'contratos.documento', 'contratos.pdf', 'contratos.firmar', 'alertas.consultar', 'recepciones.crear', 'recepciones.consultar'];
-const managerPermissions = [...commonPermissions, 'cobros.consultar', 'pagos.registrar', 'gastos.aprobar', 'contratos.modificaciones.autorizar'];
+const commonPermissions = ['maquinaria.consultar', 'contratos.crear', 'contratos.consultar', 'contratos.documento', 'contratos.pdf', 'contratos.firmar', 'alertas.consultar', 'recepciones.crear', 'recepciones.consultar', 'entregas.consultar'];
+const managerPermissions = [...commonPermissions, 'cobros.consultar', 'pagos.registrar', 'entregas.programar', 'gastos.aprobar', 'contratos.modificaciones.autorizar'];
 const equipment = { id: 1, nombre: 'Excavadora', tipo: 'Excavadora', descripcion: 'Equipo de obra', ubicacion: null, tarifa_diaria: 450, disponible: true };
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const turn = () => new Promise(resolve => setImmediate(resolve));
@@ -95,6 +95,9 @@ function startPage({ permisos = commonPermissions, role = 'residente', hash = ''
     setTimeout: callback => { intervals.push(callback); return intervals.length; }, clearTimeout() {},
     setInterval: callback => { intervals.push(callback); return intervals.length; },
     addEventListener: events.addEventListener.bind(events),
+    // HU9a: app.js avisa el contrato mostrado con un CustomEvent sobre window.
+    CustomEvent: class { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
+    dispatchEvent: event => { events.dispatch(event.type, { detail: event.detail }); return true; },
     matchMedia: () => ({ matches: false }),
     history: { replaceState: (_, __, url) => { location.href = new URL(url, location).href; } },
     Option: function(text, value) { const option = new Node('option', text); option.value = value; return option; },
@@ -111,6 +114,7 @@ function startPage({ permisos = commonPermissions, role = 'residente', hash = ''
       if (String(path).startsWith('/api/contratos/por-vencer')) return response({ contratos: [], dias: 7 });
       if (path === '/api/cobros') return response([]);
       if (path.endsWith('/documento')) return response({ titulo: 'Contrato', clausulas: [] });
+      if (path.endsWith('/entrega')) return response({ estado: 'SIN_PROGRAMAR', entrega: null });
       if (path === '/api/auth/logout') return response({ ok: true });
       throw new Error(`Solicitud inesperada: ${path}`);
     },
@@ -121,7 +125,7 @@ function startPage({ permisos = commonPermissions, role = 'residente', hash = ''
     Object.assign(context, await evaluate('sesion.js', 'return {sessionReady, hasPermission, requirePermission, showPermissionNotice};'));
     Object.assign(context, await evaluate('firma.js', 'return {createSignaturePanel};'));
     Object.assign(context, await evaluate('cobros.mjs', 'return {createCobrosPanel};'));
-    await Promise.all([evaluate('app.js'), evaluate('alertas.js'), evaluate('recepcion.js')]);
+    await Promise.all([evaluate('app.js'), evaluate('alertas.js'), evaluate('recepcion.js'), evaluate('entrega.js')]);
     await turn();
   })();
   return { document, calls, redirects, intervals, context, location, events, ready,
@@ -197,6 +201,34 @@ for (const [role, permisos, expectedLoads] of [['residente', commonPermissions, 
     assert.equal(page.calls.filter(call => call.path === '/api/cobros').length, expectedLoads);
     assert.ok(page.document.getElementById('contract-pdf'));
     assert.deepEqual(page.redirects, []);
+  });
+}
+
+for (const [role, permisos, puedeProgramar] of [['residente', commonPermissions, false], ['gerente', managerPermissions, true]]) {
+  test(`HU9a UI: ${role} ve el estado de la entrega en el detalle ${puedeProgramar ? 'y puede programarla' : 'sin formulario'}`, async () => {
+    const programada = { estado: 'PROGRAMADA', entrega: { contrato_id: 'contrato-prueba', fecha_entrega: '2035-01-01',
+      hora_desde: '08:00', hora_hasta: '10:00', transportista: '<b>x</b> Fletes', actualizado_en: '2034-12-01T00:00:00.000Z' } };
+    const page = startPage({ role, permisos, hash: '?contrato=contrato-prueba#contrato', onRequest(path, init) {
+      if (path === '/api/contratos/contrato-prueba') {
+        return response({ id: 'contrato-prueba', estado: 'CONFIRMADO', cliente: 'Cliente', ciudad: 'Santa Ana', dias: 1,
+          fecha_inicio: '2035-01-01', fecha_fin: '2035-01-01', maquinaria_id: 1, maquinaria_nombre: equipment.nombre,
+          tarifa_diaria: 450, total: 450, maquinarias: [{ maquinaria_id: 1, maquinaria_nombre: equipment.nombre, tarifa_diaria: 450, total: 450 }] });
+      }
+      if (path.endsWith('/entrega')) return response(programada);
+      if (path === '/api/entregas' && init.method === 'POST') return response(programada);
+    } });
+    await page.ready;
+    await turn();
+    const seccion = page.document.getElementById('entrega');
+    assert.equal(seccion.hidden, false);
+    assert.equal(page.document.getElementById('entrega-form').hidden, !puedeProgramar);
+    assert.ok(page.calls.some(call => call.path === '/api/contratos/contrato-prueba/entrega'));
+    const estado = page.document.getElementById('entrega-estado').textContent;
+    assert.match(estado, /^Programada: .*08:00–10:00, <b>x<\/b> Fletes$/);
+    assert.equal(page.document.getElementById('entrega-estado').children.length, 0, 'el HTML del transportista queda como texto');
+    await page.document.getElementById('entrega-form').dispatch('submit');
+    assert.equal(page.calls.some(call => call.path === '/api/entregas'), puedeProgramar,
+      'solo envía con permiso de programar y datos completos');
   });
 }
 

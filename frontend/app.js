@@ -504,6 +504,8 @@ function showConfirmation(contract) {
   loadDocument(contract.id);
   showPdfLink(contract.id);
   signaturePanel?.show(contract);
+  // HU9a: avisa a entrega.js qué contrato muestra el detalle.
+  window.dispatchEvent(new CustomEvent('contrato-mostrado', { detail: { id: contract.id, fecha_fin: contract.fecha_fin } }));
   const permalink = new URL(window.location.href);
   permalink.search = new URLSearchParams({ contrato: contract.id }).toString();
   permalink.hash = 'contrato';

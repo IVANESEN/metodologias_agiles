@@ -38,7 +38,7 @@ test('Render prepara PostgreSQL sin revisión de Supabase y conserva evidencia d
       { schemaSql, seedsSql, dataApiReviewed: false }), { code: 'DATABASE_TLS_NOT_VERIFIED' });
     }
     const result = await initializePostgresDatabase(database, { schemaSql, seedsSql, dataApiReviewed: false });
-    assert.equal(result.createdTables.length, 8);
+    assert.equal(result.createdTables.length, 9);
     assert.equal(result.connection.privateNetwork, privateNetwork);
     assert.deepEqual(result.connection.tls, tls);
     assert.equal((await inspectPostgresDatabase(database)).dataApiPanelReviewRequired, false);
@@ -100,10 +100,11 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
   await t.test('ejecuta scripts reales con ON DELETE y ON CONFLICT DO NOTHING; crea tablas privadas incluyendo autenticación', async () => {
     const result = await initializePostgresDatabase(database, reviewed);
     assert.deepEqual(result.createdTables,
-      ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion', 'token_recuperacion', 'recepcion_maquinaria']);
+      ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion', 'token_recuperacion', 'recepcion_maquinaria',
+        'entrega_programada']);
     assert.equal(result.seeded, true);
     assert.deepEqual(result.tables.map(({ name, rowCount }) => [name, rowCount]), [
-      ['contrato', 0], ['contrato_maquinaria', 0], ['maquinaria', 2], ['pago', 0],
+      ['contrato', 0], ['contrato_maquinaria', 0], ['entrega_programada', 0], ['maquinaria', 2], ['pago', 0],
       ['recepcion_maquinaria', 0], ['sesion', 0], ['token_recuperacion', 0], ['usuario', 0],
     ]);
     assert.equal(result.connection.targetProjectVerified, false);
@@ -152,6 +153,27 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
       WHERE schemaname='constructora_private' AND tablename='recepcion_maquinaria'
       AND indexname='recepcion_contrato_idx'`)).rows[0].count, 1);
   });
+  await t.test('entrega exige transportista, ventana ordenada, contrato existente y un flete por contrato', async () => {
+    const contractId = '00000000-0000-4000-8000-000000000001';
+    const insert = (contratoId, desde, hasta, transportista) => embedded.query(`INSERT INTO constructora_private.entrega_programada
+      (contrato_id, fecha_entrega, hora_desde, hora_hasta, transportista) VALUES ($1,'2027-01-01',$2,$3,$4)
+      RETURNING creado_en, actualizado_en`, [contratoId, desde, hasta, transportista]);
+    const { rows } = await insert(contractId, '08:00', '10:00', 'Transportes del Sur');
+    assert.ok(Number.isFinite(new Date(rows[0].creado_en).getTime()));
+    assert.ok(Number.isFinite(new Date(rows[0].actualizado_en).getTime()));
+    await assert.rejects(insert(contractId, '11:00', '12:00', 'Otro transportista'), { code: '23505' });
+    await embedded.query('DELETE FROM constructora_private.entrega_programada WHERE contrato_id=$1', [contractId]);
+    for (const [desde, hasta, transportista] of [['10:00', '10:00', 'Transportes'], ['10:00', '09:59', 'Transportes'],
+      ['08:00', '10:00', ' '], ['08:00', '10:00', ' x ']]) {
+      await assert.rejects(insert(contractId, desde, hasta, transportista), { code: '23514' }, `${desde}-${hasta} ${transportista}`);
+    }
+    await assert.rejects(insert(contractId, '08:00', '10:00', null), { code: '23502' });
+    await assert.rejects(insert(contractId, null, '10:00', 'Transportes'), { code: '23502' });
+    await assert.rejects(insert('00000000-0000-4000-8000-000000000099', '08:00', '10:00', 'Transportes'), { code: '23503' });
+    await insert(contractId, '08:00', '10:00', 'Transportes del Sur');
+    await assert.rejects(embedded.query('DELETE FROM constructora_private.contrato WHERE id=$1', [contractId]), { code: '23001' });
+    await embedded.query('DELETE FROM constructora_private.entrega_programada WHERE contrato_id=$1', [contractId]);
+  });
   await t.test('metadata usa text[] compatible con el parser real de pg para claves y roles de políticas', async () => {
     // PGlite decodes name[] natively; pg otherwise returns its unparsed text.
     // Use the actual SQL result OIDs and pg's text decoder to cover that gap.
@@ -190,7 +212,7 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
   await t.test('validación de arranque lee tablas y permisos sin aplicar migraciones ni semillas', async () => {
     operations.length = 0;
     const inventory = await assertPostgresReady(database);
-    assert.equal(inventory.appTables.length, 8);
+    assert.equal(inventory.appTables.length, 9);
     assert.ok(inventory.appTables.every((table) => table.rlsEnabled && table.apiPrivileges.length === 0 && table.policies.length === 0));
     assertReadOnly(operations);
   });
@@ -264,6 +286,39 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
         assertReadOnly(operations);
       } finally { await embedded.exec(restore); }
     }
+    await assertPostgresReady(database);
+  });
+  await t.test('entregas exige sus restricciones exactas sin cambiar la validación de las demás tablas', async () => {
+    const tabla = 'constructora_private.entrega_programada';
+    const ventana = 'entrega_programada_ventana_check';
+    const transportista = 'entrega_programada_transportista_check';
+    const fkey = 'entrega_programada_contrato_id_fkey';
+    const cases = [
+      [`ALTER TABLE ${tabla} ALTER COLUMN transportista DROP NOT NULL;`,
+        `ALTER TABLE ${tabla} ALTER COLUMN transportista SET NOT NULL;`],
+      [`ALTER TABLE ${tabla} ALTER COLUMN actualizado_en DROP DEFAULT;`,
+        `ALTER TABLE ${tabla} ALTER COLUMN actualizado_en SET DEFAULT CURRENT_TIMESTAMP;`],
+      [`ALTER TABLE ${tabla} DROP CONSTRAINT ${ventana};`,
+        `ALTER TABLE ${tabla} ADD CONSTRAINT ${ventana} CHECK (hora_hasta > hora_desde);`],
+      [`ALTER TABLE ${tabla} DROP CONSTRAINT ${ventana}; ALTER TABLE ${tabla} ADD CONSTRAINT ${ventana} CHECK (hora_hasta >= hora_desde);`,
+        `ALTER TABLE ${tabla} DROP CONSTRAINT ${ventana}; ALTER TABLE ${tabla} ADD CONSTRAINT ${ventana} CHECK (hora_hasta > hora_desde);`],
+      [`ALTER TABLE ${tabla} DROP CONSTRAINT ${transportista}; ALTER TABLE ${tabla} ADD CONSTRAINT ${transportista} CHECK (length(trim(transportista)) >= 1);`,
+        `ALTER TABLE ${tabla} DROP CONSTRAINT ${transportista}; ALTER TABLE ${tabla} ADD CONSTRAINT ${transportista} CHECK (length(trim(transportista)) >= 2);`],
+      [`ALTER TABLE ${tabla} DROP CONSTRAINT ${fkey}; ALTER TABLE ${tabla} ADD CONSTRAINT ${fkey} FOREIGN KEY (contrato_id) REFERENCES constructora_private.contrato(id) ON DELETE CASCADE;`,
+        `ALTER TABLE ${tabla} DROP CONSTRAINT ${fkey}; ALTER TABLE ${tabla} ADD CONSTRAINT ${fkey} FOREIGN KEY (contrato_id) REFERENCES constructora_private.contrato(id) ON DELETE RESTRICT;`],
+    ];
+    for (const [change, restore] of cases) {
+      await embedded.exec(change);
+      try {
+        operations.length = 0;
+        await rejectsCode(assertPostgresReady(database), 'INCOMPATIBLE_EXISTING_TABLES');
+        await rejectsCode(initializePostgresDatabase(database, { ...reviewed, existingReviewed: true }), 'INCOMPATIBLE_EXISTING_TABLES');
+        assertReadOnly(operations);
+      } finally { await embedded.exec(restore); }
+    }
+    await embedded.exec(`ALTER TABLE ${tabla} DISABLE ROW LEVEL SECURITY;`);
+    try { await rejectsCode(assertPostgresReady(database), 'DATABASE_PRIVACY_NOT_READY'); }
+    finally { await embedded.exec(`ALTER TABLE ${tabla} ENABLE ROW LEVEL SECURITY;`); }
     await assertPostgresReady(database);
   });
   await t.test('esquema con objetos ajenos aborta sin quitarles permisos', async () => {
@@ -363,4 +418,38 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
     assert.ok(!caught.safeMessage.includes(secret));
     assert.ok(!caught.stack.includes(secret));
   });
+});
+
+test('HU9a: la migración manual deja entrega_programada igual que la preparación normal', async (t) => {
+  const embedded = new PGlite();
+  t.after(() => embedded.close());
+  await embedded.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
+  const wrap = (connection) => ({ schema: 'constructora_private',
+    query: (sql, params) => connection.query(sql, params), exec: (sql) => connection.exec(sql) });
+  const database = { ...wrap(embedded),
+    verifyConnection: async () => ({ tls: { encrypted: true, authorized: true, protocol: 'TLSv1.3' } }),
+    transaction: (callback) => embedded.transaction((tx) => callback(wrap(tx))),
+  };
+  await initializePostgresDatabase(database, reviewed);
+  await embedded.exec('DROP TABLE constructora_private.entrega_programada;');
+  // Sin la migración, el servidor de producción no arranca.
+  await rejectsCode(assertPostgresReady(database), 'DATABASE_SCHEMA_NOT_READY');
+  const migration = await readFile(new URL('../database/migrations/20261026_hu9a.sql', import.meta.url), 'utf8');
+  await embedded.exec(migration);
+  const inventory = await assertPostgresReady(database);
+  const entrega = inventory.appTables.find(({ name }) => name === 'entrega_programada');
+  assert.equal(entrega.schema, 'constructora_private');
+  assert.equal(entrega.rlsEnabled, true);
+  assert.deepEqual(entrega.apiPrivileges, []);
+  assert.deepEqual(entrega.policies, []);
+  assert.ok(entrega.grants.every(({ grantee }) => grantee === 'current_role'));
+  const { rows } = await embedded.query(`SELECT r.rolname, p.privilege FROM pg_roles r
+    CROSS JOIN (VALUES ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER')) AS p(privilege)
+    WHERE r.rolname = ANY($1::text[])
+      AND has_table_privilege(r.oid, 'constructora_private.entrega_programada'::regclass, p.privilege)`,
+  [['anon', 'authenticated', 'service_role']]);
+  assert.deepEqual(rows, []);
+  // Repetir la migración no falla ni cambia la tabla.
+  await embedded.exec(migration);
+  await assertPostgresReady(database);
 });

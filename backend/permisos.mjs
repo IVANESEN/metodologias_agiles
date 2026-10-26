@@ -9,6 +9,7 @@ const COMPARTIDOS = Object.freeze([
   'alertas.consultar',
   'recepciones.crear',
   'recepciones.consultar',
+  'entregas.consultar',
 ]);
 const POR_ROL = Object.freeze({
   residente: COMPARTIDOS,
@@ -16,6 +17,8 @@ const POR_ROL = Object.freeze({
     // Supuesto HU2: cobros y pagos quedan reservados al gerente.
     'cobros.consultar',
     'pagos.registrar',
+    // HU9a: programar el flete corresponde al gerente de operaciones.
+    'entregas.programar',
     // Permisos reservados: todavía no existen estos módulos ni sus rutas.
     'gastos.aprobar',
     'contratos.modificaciones.autorizar',
@@ -44,6 +47,8 @@ const RUTAS = Object.freeze([
   { operacion: 'contratos.pdf', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)\/pdf$/, permiso: 'contratos.pdf' },
   { operacion: 'recepciones.crear', metodo: 'POST', patron: /^\/api\/recepciones$/, permiso: 'recepciones.crear' },
   { operacion: 'recepciones.consultar', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)\/recepciones$/, permiso: 'recepciones.consultar' },
+  { operacion: 'entregas.programar', metodo: 'POST', patron: /^\/api\/entregas$/, permiso: 'entregas.programar' },
+  { operacion: 'entregas.consultar', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)\/entrega$/, permiso: 'entregas.consultar' },
   { operacion: 'contratos.consultar', metodo: 'GET', patron: /^\/api\/contratos\/([^/]+)$/, permiso: 'contratos.consultar' },
 ].map(Object.freeze));
 

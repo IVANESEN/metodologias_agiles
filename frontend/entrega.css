@@ -1,0 +1,5 @@
+/* HU9a: bloque "Entrega" del detalle del contrato. Solo separa el bloque y su
+   título, igual que la firma; los campos usan las clases de styles.css. */
+.entrega { border-top: 1px solid var(--border); padding: 16px 0; margin-bottom: 8px; }
+.entrega h4 { font-size: 14px; margin: 0 0 8px; }
+.entrega-estado { margin: 0 0 12px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }

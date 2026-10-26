@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mjs';
 import { buildContractPdf } from './contrato-pdf.mjs';
 import { hoyElSalvador, validarDias, buscarPorVencer } from './contratos-por-vencer.mjs';
+import { validarEntrega, guardarEntrega, consultarEntrega } from './entregas.mjs';
 import { normalizeSignature } from '../frontend/firma-datos.mjs';
 import { AuthError, handleAuthRoutes, guardSession, guardPermission, checkRequestOrigin } from './auth.mjs';
 import { handleRecoveryRoutes } from './recuperacion.mjs';
@@ -618,6 +619,26 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
           throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         }
         return json(response, 200, { recepciones: await findReceptions(database, contractId.toLowerCase()) });
+      }
+      // HU9a: "hoy" se calcula en El Salvador, no con la fecha UTC del servidor.
+      if (ruta?.operacion === 'entregas.programar') {
+        const hoy = hoyElSalvador();
+        const { datos, fields } = validarEntrega(await readJson(request), hoy);
+        if (fields) throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos de la entrega.', fields);
+        const resultado = await guardarEntrega(database, datos, hoy);
+        if (resultado.noEncontrado) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
+        if (resultado.fields) throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos de la entrega.', resultado.fields);
+        response.setHeader('Location', `/api/contratos/${datos.contrato_id}/entrega`);
+        return json(response, resultado.creada ? 201 : 200, { estado: 'PROGRAMADA', entrega: resultado.entrega });
+      }
+      if (ruta?.operacion === 'entregas.consultar') {
+        const [contractId] = ruta.parametros;
+        if (!UUID_PATTERN.test(contractId)) {
+          throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
+        }
+        const resultado = await consultarEntrega(database, contractId.toLowerCase());
+        if (resultado.noEncontrado) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
+        return json(response, 200, resultado);
       }
 
       if (ruta?.operacion === 'contratos.crear') {

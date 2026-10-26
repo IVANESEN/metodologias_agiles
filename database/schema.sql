@@ -150,3 +150,19 @@ CREATE TABLE IF NOT EXISTS recepcion_maquinaria (
 
 CREATE INDEX IF NOT EXISTS recepcion_contrato_idx
   ON recepcion_maquinaria (contrato_id, fecha_recepcion DESC);
+
+-- Sprint 3 HU9a: programación de entrega y transportista. Supuesto: un solo flete
+-- por contrato, aunque incluya varias máquinas. En PostgreSQL, el RLS y el REVOKE
+-- los aplican db:init (preparación explícita) o la migración manual
+-- 20261026_hu9a.sql; PGlite no tiene RLS.
+CREATE TABLE IF NOT EXISTS entrega_programada (
+  contrato_id UUID PRIMARY KEY REFERENCES contrato(id) ON DELETE RESTRICT,
+  fecha_entrega DATE NOT NULL,
+  hora_desde TIME NOT NULL,
+  hora_hasta TIME NOT NULL,
+  transportista VARCHAR(160) NOT NULL,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT entrega_programada_transportista_check CHECK (length(trim(transportista)) >= 2),
+  CONSTRAINT entrega_programada_ventana_check CHECK (hora_hasta > hora_desde)
+);

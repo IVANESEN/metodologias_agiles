@@ -7,6 +7,7 @@ const APP_TABLES = [
   'sesion',
   'token_recuperacion',
   'recepcion_maquinaria',
+  'entrega_programada',
 ];
 const API_ROLES = ['anon', 'authenticated', 'service_role'];
 const INTERNAL_SCHEMAS = new Set(['auth', 'storage', 'realtime', '_realtime', 'extensions',
@@ -47,6 +48,15 @@ const CURRENT_COLUMNS = {
     horometro: 'integer',
     fotos: 'jsonb',
     fecha_recepcion: 'timestamp with time zone',
+  },
+  entrega_programada: {
+    contrato_id: 'uuid',
+    fecha_entrega: 'date',
+    hora_desde: 'time without time zone',
+    hora_hasta: 'time without time zone',
+    transportista: 'character varying(160)',
+    creado_en: 'timestamp with time zone',
+    actualizado_en: 'timestamp with time zone',
   },
 };
 
@@ -243,7 +253,8 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
     const sameColumns = (actual, expected) => Array.isArray(actual) && actual.length === expected.length &&
       [...actual].sort().join(',') === [...expected].sort().join(',');
     const normalizeExpression = (definition) => (definition || '').replace(/[\s()]/g, '').toLowerCase();
-    const primaryKey = table.name === 'contrato_maquinaria' ? ['contrato_id', 'maquinaria_id'] : ['id'];
+    const primaryKey = table.name === 'contrato_maquinaria' ? ['contrato_id', 'maquinaria_id']
+      : table.name === 'entrega_programada' ? ['contrato_id'] : ['id'];
     const hasPrimaryKey = table.constraints.some((constraint) => constraint.type === 'p' &&
       sameColumns(constraint.columns, primaryKey));
     const recepcionForeignKey = table.name === 'recepcion_maquinaria' &&
@@ -253,7 +264,7 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         sameColumns(constraint.referenceColumns, ['contrato_id', 'maquinaria_id']) && constraint.onDelete === 'r');
     const foreignKeys = ['maquinaria', 'usuario'].includes(table.name) ? [] : ['sesion', 'token_recuperacion'].includes(table.name)
       ? [['usuario_id', 'usuario']] : table.name === 'contrato'
-      ? [['maquinaria_id', 'maquinaria']] : table.name === 'pago' ? [['contrato_id', 'contrato']]
+      ? [['maquinaria_id', 'maquinaria']] : ['pago', 'entrega_programada'].includes(table.name) ? [['contrato_id', 'contrato']]
         : [['maquinaria_id', 'maquinaria'], ['contrato_id', 'contrato']];
     const hasForeignKeys = table.name === 'recepcion_maquinaria'
       ? recepcionForeignKey
@@ -310,6 +321,25 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         normalizeExpression(column.defaultValue) === 'current_timestamp');
       if (!requiredNotNull || !uniqueMachine || !nonNegativeHours || !photoArray || !photoCount || !createdTimestamp) {
         fail('INCOMPATIBLE_EXISTING_TABLES', 'Las restricciones de recepción no coinciden con las esperadas. Revisa evidencias, horómetro, unicidad, fecha y relación contractual.');
+      }
+    }
+    if (table.name === 'entrega_programada') {
+      const requiredNotNull = Object.keys(CURRENT_COLUMNS.entrega_programada).every((name) =>
+        table.columns.some((column) => column.name === name && column.notNull));
+      const restrictedContract = table.constraints.some((constraint) => constraint.type === 'f' &&
+        constraint.validated && sameColumns(constraint.columns, ['contrato_id']) &&
+        constraint.referenceSchema === schema && constraint.referenceTable === 'contrato' &&
+        sameColumns(constraint.referenceColumns, ['id']) && constraint.onDelete === 'r');
+      const carrierRequired = table.constraints.some((constraint) => constraint.type === 'c' &&
+        constraint.validated && sameColumns(constraint.columns, ['transportista']) &&
+        /^checklengthb?trim(?:bothfrom)?transportista(?:::text)?>=2$/.test(normalizeExpression(constraint.definition)));
+      const orderedWindow = table.constraints.some((constraint) => constraint.type === 'c' &&
+        constraint.validated && sameColumns(constraint.columns, ['hora_desde', 'hora_hasta']) &&
+        normalizeExpression(constraint.definition) === 'checkhora_hasta>hora_desde');
+      const timestamps = ['creado_en', 'actualizado_en'].every((name) => table.columns.some((column) =>
+        column.name === name && normalizeExpression(column.defaultValue) === 'current_timestamp'));
+      if (!requiredNotNull || !restrictedContract || !carrierRequired || !orderedWindow || !timestamps) {
+        fail('INCOMPATIBLE_EXISTING_TABLES', 'Las restricciones de entregas no coinciden con las esperadas. Revisa transportista, ventana horaria, fechas y relación contractual.');
       }
     }
     if (current && !table.rlsEnabled) {

@@ -100,11 +100,18 @@ PGlite temporales o en memoria.
 
 Usar únicamente una base local o de pruebas, con un usuario gerente y uno residente.
 
+**Cuidado con `.env`:** `npm start` y los scripts `db:*` cargan `.env` automáticamente
+(`--env-file-if-exists=.env` en `package.json`). Si tu `.env` tiene la `DATABASE_URL` de
+Supabase, la prueba manual correría contra la base remota. Antes de probar, renómbralo
+temporalmente (por ejemplo a `.env.supabase`) o trabaja en otra copia del repositorio, y
+devuélvelo a su nombre al terminar.
+
 Antes de empezar, crear los dos usuarios con `node backend/crear-usuario.mjs`, una vez por
 usuario, definiendo en la terminal `USUARIO_CORREO`, `USUARIO_NOMBRE`, `USUARIO_CLAVE` y
 `USUARIO_ROL` (`gerente` o `residente`). La clave no se pasa como argumento ni se versiona;
-borrar las variables al terminar. Hacerlo sin `DATABASE_URL` configurada, para que el usuario
-se cree en la base local y no en la remota. Ver [SPRINT2_AUTH.md](SPRINT2_AUTH.md).
+borrar las variables al terminar. Ejecutado así, sin `--env-file`, el script no lee `.env`;
+aun así, la terminal no debe tener `DATABASE_URL` definida, para que el usuario se cree en la
+base local y no en la remota. Ver [SPRINT2_AUTH.md](SPRINT2_AUTH.md).
 
 1. Como gerente, crear un contrato y comprobar que el bloque **Entrega** dice **Sin programar**.
 2. Pulsar **Programar entrega** con los campos vacíos: deben aparecer los mensajes de

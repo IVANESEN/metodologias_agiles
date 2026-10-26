@@ -131,17 +131,38 @@ existe en Supabase, el servidor **no arranca** (`DATABASE_SCHEMA_NOT_READY`). Ke
 seguir este orden, sin saltarse pasos:
 
 1. `npm run db:inspect` y revisar el inventario: proyecto correcto, ocho tablas existentes
-   en `constructora_private` y todas protegidas.
-2. Aplicar `database/migrations/20261026_hu9a.sql` en Supabase **con el mismo usuario de
-   `DATABASE_URL`**. El arranque exige que las tablas pertenezcan a ese usuario.
+   en `constructora_private` y todas protegidas. Solo lee, así que se puede hacer antes.
+2. Con el PR ya aprobado y revisado, aplicar `database/migrations/20261026_hu9a.sql` en
+   Supabase **con el mismo usuario de `DATABASE_URL`**. El arranque exige que las tablas
+   pertenezcan a ese usuario.
 3. Desde la rama `kevin`, ejecutar `npm run db:verify`.
-4. Solo si el paso 3 pasa, fusionar el PR.
+4. Si pasa, fusionar de inmediato y seguir el job `deploy` en Actions hasta que
+   `/api/health` responda.
 
 Si `npm run db:verify` falla con `UNSAFE_EXISTING_DATABASE_ACCESS`, **no se fusiona ni se
 fuerza nada**. Se avisa al equipo y se revisa con `npm run db:inspect` quién es el dueño de
 `entrega_programada` comparado con las demás tablas.
 
 `db:init` también podría preparar la tabla, pero este documento solo usa la migración manual.
+
+### Ventana entre la migración y el despliegue
+
+El arranque revisa la base y es estricto en ambas direcciones. Comprobado en PostgreSQL 16 real:
+
+| Código publicado | Base | Resultado al arrancar |
+| --- | --- | --- |
+| Anterior | Sin migrar | Arranca |
+| Nuevo | Sin migrar | No arranca (`DATABASE_SCHEMA_NOT_READY`) |
+| Anterior | Migrada | No arranca (`PRIVATE_SCHEMA_REVIEW_REQUIRED`): el código anterior ve una tabla que no conoce |
+| Nuevo | Migrada | Arranca |
+
+El chequeo corre solo al arrancar (`backend/server.mjs`). Una instancia ya encendida sigue
+funcionando, pero un reinicio o un arranque en frío fallaría hasta que termine el despliegue
+nuevo. Por eso la migración se aplica con el PR ya aprobado y se fusiona de inmediato.
+
+**Rollback**, si el despliegue falla antes de terminar: ejecutar
+`DROP TABLE constructora_private.entrega_programada;`, **solo mientras la tabla esté vacía**.
+Con eso el código anterior vuelve a arrancar (comprobado).
 
 ## Fuera de alcance
 

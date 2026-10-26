@@ -19,7 +19,7 @@ export async function productsList(ctx) {
   root.innerHTML = `
     <div class="page-head"><div><span class="eyebrow">${rol === 'proveedor' ? 'Tu tienda' : 'Catálogo completo'}</span><h1 style="margin-top:6px">${esc(title)}</h1>
       <p>${rol === 'proveedor' ? 'Administra fotos, precios e inventario. Los productos nuevos pasan por una revisión rápida antes de publicarse.'
-        : 'Equipo de la flota ICI y de todos los proveedores, con su estado de publicación.'}</p></div>
+        : 'Equipo de la flota propia y de todos los proveedores, con su estado de publicación.'}</p></div>
       ${ctx.can('productos.gestionar') ? `<a class="btn btn-lg" href="#/productos/nuevo">${icon('plus', 'icon icon-sm')}Agregar producto</a>` : ''}</div>
     <div class="row-between wrap">
       <div class="chips" role="group" aria-label="Estado de publicación">${TABS.map(([value, label]) =>
@@ -76,9 +76,9 @@ export async function productsList(ctx) {
 // ------------------------------------------------------------------ editor
 const STATUS_TEXT = {
   BORRADOR: ['Borrador', 'Solo tú lo ves. Publícalo cuando esté listo.'],
-  PENDIENTE: ['En revisión', 'El equipo ICI lo está revisando. Normalmente toma menos de un día hábil.'],
+  PENDIENTE: ['En revisión', 'Nuestro equipo lo está revisando. Normalmente toma menos de un día hábil.'],
   ACTIVO: ['Publicado', 'Visible en el catálogo para todos los clientes.'],
-  RECHAZADO: ['Por corregir', 'Revisa el comentario del equipo ICI y vuelve a enviarlo.'],
+  RECHAZADO: ['Por corregir', 'Revisa el comentario de nuestro equipo y vuelve a enviarlo.'],
   ARCHIVADO: ['Archivado', 'Oculto del catálogo. Puedes volver a publicarlo cuando quieras.'],
 };
 
@@ -187,7 +187,7 @@ export async function productEditor(ctx, [param]) {
     root.querySelector('[data-preview]').innerHTML = productCard({
       id: product.id || 0, nombre: data.nombre || 'Título del producto', tipo: data.tipo, marca: data.marca, anio: data.anio,
       ubicacion: data.ubicacion, modalidad: state.modalidad, tarifa_diaria: Number(data.tarifa_diaria) || 0, precio_venta: Number(data.precio_venta) || 0,
-      condicion: data.condicion, horometro: Number(data.horometro) || null, proveedor: proveedor ? (ctx.user.nombre) : (product.proveedor || 'Flota ICI'),
+      condicion: data.condicion, horometro: Number(data.horometro) || null, proveedor: proveedor ? (ctx.user.nombre) : (product.proveedor || 'Constructora El Salvador'),
       imagenes: state.images, destacado: data.destacado === 'on',
     });
     const net = root.querySelector('[data-net] span');

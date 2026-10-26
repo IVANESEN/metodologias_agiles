@@ -63,7 +63,7 @@ const ctx = {
   can(permiso) { return !permiso || this.permisos.has(permiso); },
   go(path) { location.hash = `#/${path.replace(/^\/+/, '')}`; },
   setTitle(title, crumb) {
-    document.title = `${title} · ICI Maquinaria`;
+    document.title = `${title} · Constructora El Salvador`;
     topbar.querySelector('[data-title]').textContent = title;
     topbar.querySelector('[data-crumb]').textContent = crumb || ROLES[ctx.user.rol];
   },
@@ -84,7 +84,7 @@ function renderSidebar() {
     return key && n ? `<span class="pill">${n}</span>` : '';
   };
   sidebar.innerHTML = `
-    <a class="brand" href="#/inicio" aria-label="ICI Maquinaria, inicio">${LOGO}<small>Maquinaria<br>pesada</small></a>
+    <a class="brand" href="#/inicio" aria-label="Constructora El Salvador, inicio">${LOGO}</a>
     <div class="role-card"><span class="avatar">${esc(initials(ctx.user.nombre))}</span>
       <div style="min-width:0"><strong>${esc(ctx.user.nombre)}</strong><span>${esc(ROLES[ctx.user.rol])}</span></div></div>
     ${groups.map((group) => `<nav class="nav-group" aria-label="${esc(group.group)}"><div class="nav-group-title">${esc(group.group)}</div>
@@ -102,7 +102,7 @@ function renderTopbar() {
   const cliente = ctx.can('pedidos.crear');
   topbar.innerHTML = `
     <button class="icon-btn menu-toggle" type="button" data-menu aria-label="Abrir menú" aria-expanded="false">${icon('menu')}</button>
-    <div class="crumbs"><small data-crumb></small><strong data-title>ICI Maquinaria</strong></div>
+    <div class="crumbs"><small data-crumb></small><strong data-title>Constructora El Salvador</strong></div>
     ${ctx.can('tienda.consultar') ? `<form class="search" role="search" data-search>
       <div class="input-group">${icon('search')}<input class="input" name="q" type="search" placeholder="Buscar excavadoras, grúas, marcas…" aria-label="Buscar en el catálogo"></div></form>` : '<div style="margin-left:auto"></div>'}
     <div class="topbar-actions">
@@ -197,7 +197,7 @@ async function start() {
     if (!form) return;
     event.preventDefault();
     const q = new FormData(form).get('q').trim();
-    sessionStorage.setItem('ici.busqueda', q);
+    sessionStorage.setItem('ces.busqueda', q);
     if (location.hash === '#/catalogo') route(); else ctx.go('catalogo');
   });
   document.addEventListener('click', async (event) => {

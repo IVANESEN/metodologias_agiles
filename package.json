@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Plataforma ICI de renta y venta de maquinaria pesada: portal multirrol, contratos y operación",
+  "description": "Constructora El Salvador: renta y venta de maquinaria pesada con portal multirrol, contratos y operación",
   "engines": {
     "node": ">=24 <25"
   },

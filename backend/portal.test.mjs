@@ -192,7 +192,7 @@ test('Portal multirrol: escenarios de cliente, proveedor, empleado y administrac
     const proveedor = await call('/api/portal/usuarios/nuevo', { cookie: cookie.empleado, method: 'POST',
       body: { nombre: 'Grúas del Pacífico', correo: 'gruas@pacifico.example', rol: 'proveedor', telefono: '2440-1000' } });
     assert.equal(proveedor.status, 201);
-    assert.match(proveedor.body.clave_temporal, /^Ici-/);
+    assert.match(proveedor.body.clave_temporal, /^Obra-/);
     const sesion = await login('gruas@pacifico.example', proveedor.body.clave_temporal);
     const nueva = await call(`/api/portal/usuarios/${proveedor.body.usuario.id}/clave`, { cookie: cookie.empleado, method: 'POST', body: {} });
     assert.equal(nueva.status, 200);

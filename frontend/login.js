@@ -2,7 +2,7 @@ import { bindAuthForm } from './auth-form.js';
 
 const correo = document.getElementById('correo');
 const recordar = document.getElementById('recordar');
-try { correo.value = localStorage.getItem('ici.correo') || ''; } catch { /* sin almacenamiento */ }
+try { correo.value = localStorage.getItem('ces.correo') || ''; } catch { /* sin almacenamiento */ }
 (correo.value ? document.getElementById('clave') : correo).focus();
 
 // Cada rol entra a su espacio: el equipo de obra a la operación de contratos,
@@ -17,8 +17,8 @@ bindAuthForm({
   },
   onSuccess: user => {
     try {
-      if (recordar.checked) localStorage.setItem('ici.correo', correo.value.trim());
-      else localStorage.removeItem('ici.correo');
+      if (recordar.checked) localStorage.setItem('ces.correo', correo.value.trim());
+      else localStorage.removeItem('ces.correo');
     } catch { /* sin almacenamiento */ }
     location.replace(DESTINO[user.rol] || '/app.html');
   },

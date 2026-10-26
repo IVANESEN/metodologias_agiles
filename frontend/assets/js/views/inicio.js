@@ -124,7 +124,7 @@ export async function dashboard(ctx) {
     ctx.setTitle('Inicio', `Hola, ${user.nombre}`);
     root.innerHTML = `
       <section class="hero">
-        <div class="hero-copy"><span class="eyebrow on-dark">${esc(data.perfil.empresa || 'Tu cuenta ICI')}</span>
+        <div class="hero-copy"><span class="eyebrow on-dark">${esc(data.perfil.empresa || 'Tu cuenta')}</span>
           <h1>tu obra,<b>sin pausas</b></h1>
           <p>Renta por día, semana o mes con fechas garantizadas, o compra equipo con entrega directa en tu proyecto.</p>
           <div class="row wrap" style="margin-top:6px"><a class="btn btn-amarillo" href="#/catalogo">${icon('store', 'icon icon-sm')}Explorar catálogo</a>
@@ -159,7 +159,7 @@ export async function dashboard(ctx) {
         ${kpi({ label: 'Ventas y rentas brutas', value: money0(k.ventas_brutas), foot: 'Pedidos aprobados o entregados', ico: 'trend', feature: true })}
         ${kpi({ label: 'Tu ingreso neto', value: money0(k.neto), foot: `Después de la comisión de ${number(k.comision_pct)} %`, ico: 'dollar' })}
         ${kpi({ label: 'Productos publicados', value: number(k.productos.ACTIVO), foot: `${number(k.productos.PENDIENTE)} en revisión`, ico: 'package' })}
-        ${kpi({ label: 'Pedidos por atender', value: number(k.pedidos_pendientes), foot: 'Esperando aprobación de ICI', ico: 'clipboard' })}
+        ${kpi({ label: 'Pedidos por atender', value: number(k.pedidos_pendientes), foot: 'Esperando aprobación', ico: 'clipboard' })}
       </div>
       <div class="pipeline">${estados.map(([estado, label, ico]) => `<a href="#/productos?estado=${estado}">
         <span class="row" style="gap:8px">${icon(ico, 'icon icon-sm')}${esc(label)}</span><strong>${number(k.productos[estado])}</strong></a>`).join('')}</div>

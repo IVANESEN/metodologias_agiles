@@ -1,5 +1,5 @@
 :root {
-  /* Marca ICI (Brandbook 2025): misma paleta y tipografía que el portal. */
+  /* Constructora El Salvador: misma paleta y tipografía que el portal. */
   color-scheme: light;
   font-family: "Poppins", "Montserrat", "Century Gothic", "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
@@ -387,12 +387,12 @@ fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
 @media (max-width: 600px) { .header-inner { flex-wrap: wrap; gap: 16px; } .auth-page { padding: 20px; } }
 
 
-/* ---- Marca ICI: superficies redondeadas y botones tipo píldora ---- */
+/* ---- Constructora El Salvador: superficies redondeadas y botones tipo píldora ---- */
 body { background: var(--background); }
 .site-header { background: #0F1EAD; border-bottom: 0; }
 .site-header .brand, .site-header .header-label { color: #E8EFFF; }
 .brand-symbol { width: auto; height: auto; padding: 0; border: 0; background: transparent; color: #FFFFFF; }
-.brand-symbol .logo { display: block; height: 28px; width: auto; }
+.brand-symbol .logo-mark { display: block; width: 36px; height: 36px; }
 .brand-subtitle { color: #FFFFFF; }
 .site-nav { background: transparent; }
 .nav-tab { border-radius: 12px 12px 0 0; }

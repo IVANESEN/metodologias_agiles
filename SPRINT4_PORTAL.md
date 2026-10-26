@@ -1,9 +1,9 @@
-# Sprint 4 · Portal ICI multirrol
+# Sprint 4 · Portal multirrol de Constructora El Salvador
 
 Plataforma de renta y venta de maquinaria pesada con cuatro tipos de cuenta:
 **cliente**, **proveedor**, **empleado** y **administración**. El módulo de
 contratos de obra de los sprints anteriores (catálogo, contrato, firma, PDF,
-alertas, cobros y recepción) se conserva completo y ahora usa la marca ICI.
+alertas, cobros y recepción) se conserva completo y ahora usa la misma identidad visual.
 
 ![Inicio de sesión](doc/capturas/01-login.jpg)
 
@@ -137,9 +137,11 @@ esquema incompleto, igual que en las migraciones anteriores.
 
 ## Marca
 
-Colores y tipografía del Brandbook ICI 2025: celeste `#1EA4D9`, azul `#0F1EAD`,
-amarillo `#FEDC00` (uso puntual), índigo `#312783`, gris blanco `#E8EFFF`;
-solo Poppins, sin itálicas, sin degradados. El logotipo es el archivo vectorial
-oficial (`frontend/assets/brand/logo-ici.svg`). Iconografía de línea uniforme,
-sin emojis. Fotografías de Wikimedia Commons con licencias CC BY / CC BY-SA,
-acreditadas en `/creditos.html`.
+Identidad de **Constructora El Salvador**: azul `#0F1EAD` como color principal,
+celeste `#1EA4D9`, índigo `#312783` y gris blanco `#E8EFFF` en superficies, y
+amarillo `#FEDC00` solo como acento. Tipografía única Poppins, sin itálicas ni
+degradados, esquinas redondeadas en botones, tarjetas y campos. El logotipo
+(`frontend/assets/brand/logo-constructora.svg`) es un volcán con cráter sobre una
+franja amarilla de obra, acompañado del nombre de la marca. Iconografía de línea
+uniforme, sin emojis. Fotografías de Wikimedia Commons con licencias CC BY /
+CC BY-SA, acreditadas en `/creditos.html`.

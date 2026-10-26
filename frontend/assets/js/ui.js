@@ -182,7 +182,7 @@ export function skeletonCards(count = 6) {
 
 // Carrito por usuario en este navegador. El servidor recalcula precios y disponibilidad.
 export function createCart(userId) {
-  const key = `ici.carrito.${userId}`;
+  const key = `ces.carrito.${userId}`;
   const listeners = new Set();
   const read = () => { try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; } };
   const write = (items) => {

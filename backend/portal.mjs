@@ -93,7 +93,7 @@ export function temporaryPassword() {
   const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
   const bytes = randomBytes(12);
   const chars = [...bytes].map((byte) => alphabet[byte % alphabet.length]).join('');
-  return `Ici-${chars.slice(0, 4)}-${chars.slice(4, 8)}-${chars.slice(8, 12)}`;
+  return `Obra-${chars.slice(0, 4)}-${chars.slice(4, 8)}-${chars.slice(8, 12)}`;
 }
 
 // ---------------------------------------------------------------- tasas
@@ -130,7 +130,7 @@ function productOut(row) {
     tarifa_diaria: venta ? null : num(row.tarifa_diaria), precio_venta: num(row.precio_venta),
     disponible: row.disponible, ubicacion: row.ubicacion, horometro: num(row.horometro),
     proveedor_id: row.proveedor_id,
-    proveedor: row.proveedor_id ? (row.proveedor_empresa || row.proveedor_nombre) : 'Flota ICI',
+    proveedor: row.proveedor_id ? (row.proveedor_empresa || row.proveedor_nombre) : 'Constructora El Salvador',
     marca: row.marca, modelo: row.modelo, anio: num(row.anio), condicion: row.condicion, modalidad: row.modalidad,
     stock: num(row.stock), sku: row.sku, estado_publicacion: row.estado_publicacion, motivo_rechazo: row.motivo_rechazo,
     especificaciones: row.especificaciones || {}, destacado: row.destacado, imagenes: imageUrls(row),

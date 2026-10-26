@@ -34,18 +34,18 @@ export function productCard(product) {
 export async function catalog(ctx) {
   const root = ctx.view;
   const state = {
-    q: sessionStorage.getItem('ici.busqueda') || '',
+    q: sessionStorage.getItem('ces.busqueda') || '',
     tipo: ctx.query.get('tipo') || '',
     modalidad: ctx.query.get('modalidad') || '',
     orden: '',
     condicion: '',
   };
-  sessionStorage.removeItem('ici.busqueda');
+  sessionStorage.removeItem('ces.busqueda');
   const search = document.querySelector('[data-search] input');
   if (search) search.value = state.q;
   root.innerHTML = `
     <div class="page-head"><div><span class="eyebrow">Catálogo</span><h1 style="margin-top:6px">Maquinaria disponible</h1>
-      <p>Equipo de la flota ICI y de proveedores verificados. Las tarifas no incluyen IVA; el flete y el depósito se calculan al cotizar.</p></div>
+      <p>Equipo de nuestra flota propia y de proveedores verificados. Las tarifas no incluyen IVA; el flete y el depósito se calculan al cotizar.</p></div>
       <span class="badge b-neutral" data-count></span></div>
     <div class="store-toolbar">
       <div class="row-between wrap">
@@ -312,7 +312,7 @@ export async function cartView(ctx) {
   ctx.setTitle('Carrito', 'Tu pedido');
   let quoteController;
   const draft = {};
-  try { Object.assign(draft, JSON.parse(sessionStorage.getItem('ici.checkout') || '{}')); } catch { /* sin borrador */ }
+  try { Object.assign(draft, JSON.parse(sessionStorage.getItem('ces.checkout') || '{}')); } catch { /* sin borrador */ }
 
   function render() {
     const items = ctx.cart.items();
@@ -355,7 +355,7 @@ export async function cartView(ctx) {
             <div data-quote><div class="skeleton" style="height:180px"></div></div>
             <p class="notice error" data-error hidden></p>
             <button class="btn btn-lg btn-block" type="submit" data-submit disabled>${icon('checkCircle', 'icon icon-sm')}Confirmar pedido</button>
-            <p class="small muted" style="text-align:center">No se realiza ningún cobro hasta que ICI confirme disponibilidad.</p>
+            <p class="small muted" style="text-align:center">No se realiza ningún cobro hasta confirmar disponibilidad.</p>
           </form>
         </aside>
       </div>`;
@@ -402,7 +402,7 @@ export async function cartView(ctx) {
     const key = event.target.closest('[data-key]')?.dataset.key;
     if (!key) {
       const form = event.target.closest('[data-checkout]');
-      if (form) sessionStorage.setItem('ici.checkout', JSON.stringify(Object.fromEntries(new FormData(form))));
+      if (form) sessionStorage.setItem('ces.checkout', JSON.stringify(Object.fromEntries(new FormData(form))));
       return;
     }
     const item = ctx.cart.items().find((row) => row.key === key);
@@ -429,7 +429,7 @@ export async function cartView(ctx) {
         items: ctx.cart.items().map(({ maquinaria_id, modalidad, cantidad, fecha_inicio, fecha_fin, con_operador }) =>
           ({ maquinaria_id, modalidad, cantidad, fecha_inicio, fecha_fin, con_operador })) } });
       ctx.cart.clear();
-      sessionStorage.removeItem('ici.checkout');
+      sessionStorage.removeItem('ces.checkout');
       toast(`Pedido ${order.numero_visible} recibido. Te avisaremos cuando se apruebe.`, 'ok');
       ctx.go(`pedido/${order.id}`);
     } catch (error) {

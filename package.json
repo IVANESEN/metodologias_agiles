@@ -14,7 +14,8 @@
     "db:inspect": "node --env-file-if-exists=.env backend/inspect-db.mjs",
     "db:init": "node --env-file-if-exists=.env backend/init-db.mjs",
     "db:verify": "node --env-file-if-exists=.env backend/verify-db.mjs",
-    "db:demo": "node --env-file-if-exists=.env backend/cargar-demo.mjs"
+    "db:demo": "node --env-file-if-exists=.env backend/cargar-demo.mjs",
+    "db:portal": "node --env-file-if-exists=.env backend/preparar-portal.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",

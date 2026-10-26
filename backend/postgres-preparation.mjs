@@ -29,6 +29,9 @@ const LEGACY_COLUMNS = {
     maquinaria_nombre: 'character varying(120)', tarifa_diaria: 'numeric(12,2)' },
   pago: { id: 'uuid', contrato_id: 'uuid', monto: 'numeric(14,2)',
     creado_en: 'timestamp with time zone' },
+  // Antes del portal multirrol: db:init agrega teléfono, empresa, documento y último acceso.
+  usuario: { id: 'uuid', correo: 'character varying(254)', nombre: 'character varying(160)', clave_hash: 'text',
+    rol: 'character varying(20)', activo: 'boolean', creado_en: 'timestamp with time zone' },
 };
 const CURRENT_COLUMNS = {
   maquinaria: { ...LEGACY_COLUMNS.maquinaria, ubicacion: 'character varying(100)',

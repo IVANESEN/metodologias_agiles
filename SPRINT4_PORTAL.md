@@ -126,14 +126,31 @@ SKU, estado de publicación, imágenes, ficha técnica), datos de contacto en
 `auditoria`. El validador de producción (`backend/postgres-preparation.mjs`)
 conoce las tablas nuevas y sus relaciones.
 
-Para una base PostgreSQL ya existente (Supabase/Render), en este orden:
+## Despliegue en Render (único paso pendiente)
 
-1. Ejecutar la migración revisada `database/migrations/20261026_portal_multirrol.sql` (amplía los roles permitidos).
-2. `npm run db:init -- --existing-reviewed` (crea columnas y tablas nuevas sin tocar datos).
-3. Opcional: `npm run db:demo` para cargar las cuentas y el catálogo de demostración.
+El código, las pruebas y el pipeline ya están listos. Render sigue usando la misma
+base de Supabase y las mismas variables de entorno; no hay variables nuevas.
 
-Hasta completar esos pasos, el arranque en producción se detiene con el aviso de
-esquema incompleto, igual que en las migraciones anteriores.
+1. **Preparar la base de Supabase** desde esta computadora. En `.env` (ignorado por
+   Git) completa `DATABASE_URL` (Supabase → Connect → Session pooler → URI),
+   `SUPABASE_PROJECT_REF` y `SUPABASE_DATA_API_REVIEWED=true` tras revisar la Data API.
+   Luego ejecuta:
+
+   ```sh
+   npm run db:inspect               # revisión de solo lectura
+   npm run db:portal -- --demo      # roles, tablas nuevas, tasas y datos de demostración
+   npm run db:verify                # comprueba TLS, esquema y API
+   ```
+
+   `db:portal` es aditivo e idempotente: no borra ni modifica contratos, pagos,
+   usuarios ni sesiones, y se puede repetir sin duplicar datos. Sin `--demo` solo
+   prepara el esquema y las tasas.
+2. **Unir el Pull Request a `main`.** El pipeline ejecuta build y pruebas y, si
+   pasan, despliega en Render y verifica `/api/health` con el commit publicado.
+3. **Comprobar en vivo** `https://metodologias-agiles-ci.onrender.com` con las cuentas de prueba.
+
+Si se despliega antes del paso 1, Render detecta el esquema incompleto y no
+reemplaza la versión que está en línea.
 
 ## Marca
 

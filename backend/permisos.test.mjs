@@ -153,10 +153,67 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
     });
   }
 
+  await t.test('login no convierte credenciales de residente en gerente con un rol enviado por el navegador', async () => {
+    const login = await solicitar('/api/auth/login?rol=gerente', {
+      headers: { 'X-Rol': 'gerente', 'X-User-Role': 'gerente' },
+      body: { correo: usuarios.residente.correo, clave: 'Clave de prueba permisos 2026',
+        rol: 'gerente', permisos: exclusivos },
+    });
+    assert.equal(login.status, 200);
+    assert.equal(login.body.rol, 'residente');
+    const cookie = login.response.headers.get('set-cookie').split(';')[0];
+    const sesion = await solicitar('/api/auth/sesion', { cookie });
+    assert.equal(sesion.body.rol, 'residente');
+    assert.deepEqual(ordenar(sesion.body.permisos), ordenar(compartidos));
+    for (const [path, body] of [['/api/cobros', undefined],
+      [`/api/contratos/${contratos.residente}/pagos`, { monto: '1.00', rol: 'gerente' }]]) {
+      limpiarObservacion();
+      const result = await solicitar(path, { cookie, body });
+      assert.equal(result.status, 403);
+      assert.equal(result.body.error.code, 'FORBIDDEN');
+      sinConsultasDeNegocio();
+    }
+    assert.equal((await database.query('SELECT rol FROM usuario WHERE id=$1', [usuarios.residente.id])).rows[0].rol, 'residente');
+  });
+
+  await t.test('registro público conserva el rol cliente aunque se soliciten privilegios de gerente', async () => {
+    const datos = { correo: 'registro@permisos.example', nombre: 'Registro sin privilegios',
+      clave: 'Clave de prueba registro 2026', rol: 'gerente', permisos: exclusivos };
+    const registro = await solicitar('/api/auth/registro?rol=gerente', {
+      body: datos, headers: { 'X-Rol': 'gerente' },
+    });
+    assert.equal(registro.status, 201);
+    assert.equal(registro.body.rol, 'cliente');
+    assert.equal((await database.query('SELECT rol FROM usuario WHERE id=$1', [registro.body.id])).rows[0].rol, 'cliente');
+    const login = await solicitar('/api/auth/login', { body: datos });
+    assert.equal(login.status, 200);
+    const cookie = login.response.headers.get('set-cookie').split(';')[0];
+    const sesion = await solicitar('/api/auth/sesion', { cookie });
+    assert.equal(sesion.body.rol, 'cliente');
+    assert.ok(exclusivos.every(permiso => !sesion.body.permisos.includes(permiso)));
+    for (const [path, body] of [
+      ['/api/cobros', undefined],
+      [`/api/contratos/${contratos.residente}/pagos`, { monto: '1.00', rol: 'gerente' }],
+      ['/api/entregas', { contrato_id: contratos.residente, rol: 'gerente' }],
+    ]) {
+      limpiarObservacion();
+      const result = await solicitar(path, { cookie, body, headers: { 'X-Rol': 'gerente' } });
+      assert.equal(result.status, 403, path);
+      assert.equal(result.body.error.code, 'FORBIDDEN');
+      sinConsultasDeNegocio();
+    }
+  });
+
   await t.test('residente: llamadas directas y roles falsificados reciben 403 antes de leer negocio o validar datos', async () => {
     const id = contratos.residente;
+    const entregaAutorizada = await solicitar('/api/entregas', { cookie: cookies.gerente, body: {
+      contrato_id: id, fecha_entrega: '2037-03-01', hora_desde: '08:00', hora_hasta: '10:00',
+      transportista: 'Transportista autorizado por gerente',
+    } });
+    assert.equal(entregaAutorizada.status, 201);
     const antes = await database.query('SELECT * FROM pago ORDER BY id');
     const contratoAntes = await database.query('SELECT * FROM contrato WHERE id=$1', [id]);
+    const entregasAntes = await database.query('SELECT * FROM entrega_programada ORDER BY contrato_id');
     const casos = [
       ['/api/cobros', {}],
       ['/api/cobros?rol=gerente&permiso=cobros.consultar', { headers: { 'X-Rol': 'gerente', 'X-Role': 'gerente' } }],
@@ -186,6 +243,10 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
     }
     assert.deepEqual(await database.query('SELECT * FROM pago ORDER BY id'), antes);
     assert.deepEqual(await database.query('SELECT * FROM contrato WHERE id=$1', [id]), contratoAntes);
+    assert.deepEqual(await database.query('SELECT * FROM entrega_programada ORDER BY contrato_id'), entregasAntes);
+    const entregaConsultada = await solicitar(`/api/contratos/${id}/entrega`, { cookie: cookies.residente });
+    assert.equal(entregaConsultada.status, 200);
+    assert.deepEqual(entregaConsultada.body, entregaAutorizada.body);
     const sesion = await solicitar('/api/auth/sesion?rol=gerente', {
       cookie: cookies.residente, headers: { 'X-Rol': 'gerente' },
     });
@@ -256,6 +317,36 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
     } finally {
       await database.query('UPDATE usuario SET activo=TRUE WHERE id=$1', [usuarios.residente.id]);
     }
+  });
+
+  await t.test('cookies malformadas, duplicadas y sesiones revocadas no autorizan escrituras ni modifican datos', async () => {
+    const token = randomBytes(32).toString('base64url');
+    await database.query(`INSERT INTO sesion (id,usuario_id,token_hash,expira_en)
+      VALUES ($1,$2,$3,CURRENT_TIMESTAMP + INTERVAL '1 hour')`,
+    [randomUUID(), usuarios.gerente.id, hashToken(token)]);
+    const cookieRevocada = `sesion=${token}`;
+    assert.equal((await solicitar('/api/cobros', { cookie: cookieRevocada })).status, 200);
+    await database.query('DELETE FROM sesion WHERE token_hash=$1', [hashToken(token)]);
+    const pagosAntes = await database.query('SELECT * FROM pago ORDER BY id');
+    const contratosAntes = await database.query('SELECT * FROM contrato ORDER BY id');
+    const entregasAntes = await database.query('SELECT * FROM entrega_programada ORDER BY contrato_id');
+    for (const cookie of ['sesion=token-malformado', `${cookies.gerente}; ${cookies.gerente}`, cookieRevocada]) {
+      for (const [path, body] of [
+        [`/api/contratos/${contratos.residente}/pagos`, { monto: '1.00', rol: 'gerente' }],
+        ['/api/entregas', { contrato_id: contratos.residente, fecha_entrega: '2037-03-01',
+          hora_desde: '12:00', hora_hasta: '14:00', transportista: 'Cambio no autorizado', rol: 'gerente' }],
+      ]) {
+        limpiarObservacion();
+        const result = await solicitar(path, { cookie, body, headers: { 'X-Rol': 'gerente' } });
+        assert.equal(result.status, 401, path);
+        assert.equal(result.body.error.code, 'UNAUTHENTICATED');
+        sinCache(result);
+        sinConsultasDeNegocio();
+      }
+    }
+    assert.deepEqual(await database.query('SELECT * FROM pago ORDER BY id'), pagosAntes);
+    assert.deepEqual(await database.query('SELECT * FROM contrato ORDER BY id'), contratosAntes);
+    assert.deepEqual(await database.query('SELECT * FROM entrega_programada ORDER BY contrato_id'), entregasAntes);
   });
 
   await t.test('rutas concretas mantienen 404/405 y no habilitan módulos ausentes ni variantes', async () => {

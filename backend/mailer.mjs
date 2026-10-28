@@ -1,3 +1,5 @@
+import { createGmailMailer } from './gmail-mailer.mjs';
+
 export function createMemoryMailer() {
   const outbox = [];
   return { available: true, outbox, async send(message) { outbox.push({ ...message }); } };
@@ -30,7 +32,19 @@ export function createResendMailer({ apiKey, from, fetchImpl = globalThis.fetch 
 }
 
 export function createMailer({ production = process.env.NODE_ENV === 'production', logger = console,
-  apiKey = process.env.RESEND_API_KEY, from = process.env.MAIL_FROM, fetchImpl = globalThis.fetch } = {}) {
+  apiKey = process.env.RESEND_API_KEY, from = process.env.MAIL_FROM, fetchImpl = globalThis.fetch,
+  provider = process.env.MAIL_PROVIDER || 'resend',
+  gmailClientId = process.env.GMAIL_CLIENT_ID, gmailClientSecret = process.env.GMAIL_CLIENT_SECRET,
+  gmailRefreshToken = process.env.GMAIL_REFRESH_TOKEN, gmailUser = process.env.GMAIL_USER } = {}) {
+  const selected = typeof provider === 'string' ? provider.trim().toLowerCase() : '';
+  if (selected === 'gmail') return createGmailMailer({
+    clientId: gmailClientId, clientSecret: gmailClientSecret, refreshToken: gmailRefreshToken,
+    user: gmailUser, fetchImpl,
+  });
+  if (selected !== 'resend') return {
+    available: false,
+    async send() { throw new Error('No se pudo enviar el correo de recuperación.'); },
+  };
   if (apiKey || from) return createResendMailer({ apiKey, from, fetchImpl });
   return {
     // No simulation, tokens or delivery claims in production. Inject a real adapter to enable recovery there.

@@ -2,6 +2,7 @@ import { createServer } from './app.mjs';
 import { createDatabase, initializeDatabase, safeDatabaseError } from './database.mjs';
 import { assertPostgresReady } from './postgres-preparation.mjs';
 import { loadDemoData } from './demo-data.mjs';
+import { createMailer } from './mailer.mjs';
 
 const configuredPort = process.env.PORT || process.env.SERVER_PORT || '3000';
 const port = Number(configuredPort);
@@ -22,7 +23,7 @@ if (!Number.isInteger(port) || port < 0 || port > 65_535) {
       await database.verifyConnection();
       await assertPostgresReady(database);
     }
-    server = createServer({ database, requireAuth: true });
+    server = createServer({ database, requireAuth: true, mailer: createMailer() });
     await new Promise((resolve, reject) => {
       server.once('error', reject);
       server.listen(port, host, resolve);

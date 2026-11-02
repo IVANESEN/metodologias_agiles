@@ -173,6 +173,9 @@ test('Migración de despliegue en PostgreSQL real aislado', {
   } catch { throw new Error('No se pudo abrir el PostgreSQL local aislado para esta prueba.'); }
   const [first, second] = clients;
   await Promise.all(clients.map(dbtestConfirmTarget));
+  // Match production onConnect: constraint rendering depends on search_path.
+  await Promise.all(clients.map(client => dbtestQuery(client,
+    "SELECT set_config('search_path', $1, false)", [`${DBTEST_SCHEMA}, pg_catalog`])));
   assert.notEqual(first.processID, second.processID, 'La concurrencia requiere dos conexiones PostgreSQL reales.');
   const schemaSql = await readFile(new URL('../database/schema.sql', import.meta.url), 'utf8');
   const boundary = schemaSql.indexOf('-- H01:');

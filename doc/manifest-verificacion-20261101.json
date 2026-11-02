@@ -1,0 +1,473 @@
+﻿{
+    "date":  "2026-11-01",
+    "timezone":  "America/El_Salvador",
+    "executor":  "Codex automated verification in this session",
+    "branch":  "victo",
+    "base_commit":  "b8a580d42a5ab2c57e66ef5d2233a559d6671407",
+    "tests":  {
+                  "command":  "node --test --test-isolation=none backend/*.test.mjs",
+                  "passed":  244,
+                  "failed":  0,
+                  "skipped":  0,
+                  "evidence":  "doc/RESULTADOS_PRUEBAS_20261101.txt",
+                  "exit_code":  0
+              },
+    "files":  [
+                  {
+                      "path":  "backend/alquiler-reglas.mjs",
+                      "sha256":  "366f8073b46f9669d0d6ce93daa9a64247f76eb5b671fcc0e14ab5ec96fecc7d"
+                  },
+                  {
+                      "path":  "backend/alquiler-reglas.test.mjs",
+                      "sha256":  "ae70dee8b3b54809358bbbf277f0d67579dc567a78d910481f2e71953994caee"
+                  },
+                  {
+                      "path":  "backend/app.mjs",
+                      "sha256":  "af20f238079bbd13000cb63e708b04c1a5cd77c963b039d442ef92b8f0403586"
+                  },
+                  {
+                      "path":  "backend/app.test.mjs",
+                      "sha256":  "3fe85d729f9cd0d33de9ac3b97272ddc3d8c1ab413efbb6ab193804ccfec3212"
+                  },
+                  {
+                      "path":  "backend/auth.mjs",
+                      "sha256":  "95527573adc2e67f07b751b825a80b034ea2b1e9acce66dbcd4ef1a6f6d12884"
+                  },
+                  {
+                      "path":  "backend/auth.test.mjs",
+                      "sha256":  "55d458eef7d3f6a2e7eab5193019cce5d81e3b258d12e07532f3d0e52b25ea79"
+                  },
+                  {
+                      "path":  "backend/cargar-demo.mjs",
+                      "sha256":  "da1e2ef699fd0a0f10ca4164000d8018cc66a05d0d6d28fe08552e15f29b01d6"
+                  },
+                  {
+                      "path":  "backend/cobros.test.mjs",
+                      "sha256":  "0902e6ed745947f4afd747a2f9a2c76bebe9c29d2b9ef8239a8fc2335d699ab8"
+                  },
+                  {
+                      "path":  "backend/cobros-frontend.test.mjs",
+                      "sha256":  "62be89a22f84d36d598c33c1e1c41e28e40b6ce238806445f83ce309fbb85718"
+                  },
+                  {
+                      "path":  "backend/contrato-firma.test.mjs",
+                      "sha256":  "c9a55761d51e1b0da354aa9ba59a60cdd3b8077f091dcd6a8aaf37add6a28c0c"
+                  },
+                  {
+                      "path":  "backend/contrato-formal.test.mjs",
+                      "sha256":  "1663c8ddcb23da9e85d10c0aba0b8ef224acc90ed73faa62a04bee66ec99221a"
+                  },
+                  {
+                      "path":  "backend/contrato-legal.mjs",
+                      "sha256":  "fa32fe62ab9484658c876533bd1a9159e24c94cd5ff148244045281ddfc0d997"
+                  },
+                  {
+                      "path":  "backend/contrato-pdf.mjs",
+                      "sha256":  "68ed4962cc7a5bc194e02be8ddd561b28ef7d8e6a5bdf8780923da2ee647ac41"
+                  },
+                  {
+                      "path":  "backend/contrato-pdf.test.mjs",
+                      "sha256":  "1fa280cb3bf630d3f3e817af57590a96dd54fee17afd89e0e9fa2577dcee1a49"
+                  },
+                  {
+                      "path":  "backend/contratos-por-vencer.mjs",
+                      "sha256":  "70258f4259d244b9c8796710ca6f51bc10c6fc7e493208f0bae85cdce41aa56d"
+                  },
+                  {
+                      "path":  "backend/contratos-por-vencer.test.mjs",
+                      "sha256":  "2ee1b73e8e75a78d66cbdcd3bea0ac8e6f2167892713c2d40160210e5946fd85"
+                  },
+                  {
+                      "path":  "backend/crear-usuario.mjs",
+                      "sha256":  "c0a3f196b72581cde1501941d2a427383c5620e778004f9da776d3255e13550b"
+                  },
+                  {
+                      "path":  "backend/database.mjs",
+                      "sha256":  "c2e64cfc189dce074154c726c19b1d51bc0894a10334b8b4d400901673754bcc"
+                  },
+                  {
+                      "path":  "backend/database-config.test.mjs",
+                      "sha256":  "bd4fa8c28e5734260bfc138351811e67a61e600af51411f7f5262c6987c88810"
+                  },
+                  {
+                      "path":  "backend/demo-data.mjs",
+                      "sha256":  "663fee8007c39dfe26c594fcd2858e211942b3231d88cdabfa744c134ca38d4a"
+                  },
+                  {
+                      "path":  "backend/despacho.mjs",
+                      "sha256":  "12f299d346903e8e4f6e27853d56b27df38a35a57e78d973288363690f8121fa"
+                  },
+                  {
+                      "path":  "backend/despacho-evidencias.test.mjs",
+                      "sha256":  "8fbd1e00d5ca90e74ccbf1c3fedd1cbb8ac2f0707aebe7b4dceb0d2f9c35dd9e"
+                  },
+                  {
+                      "path":  "backend/despacho-frontend.test.mjs",
+                      "sha256":  "ea505a336142a14303ca5894cfc9f84743e7c361c4b60f4ac116228de54a89cd"
+                  },
+                  {
+                      "path":  "backend/entregas.mjs",
+                      "sha256":  "c37e57d096b830bb32781b9e9b78473023aeb0e73ae4ddd9739671820b6ef0b5"
+                  },
+                  {
+                      "path":  "backend/entregas.test.mjs",
+                      "sha256":  "07887d59efccb0d0661db316daa62497328daefe8d44470d63b758ef96ab81d6"
+                  },
+                  {
+                      "path":  "backend/entregas-frontend.test.mjs",
+                      "sha256":  "e363695a413f205594ce04c2bf440719c4bebf048bbbb63f2557013ae126971b"
+                  },
+                  {
+                      "path":  "backend/ficha-tecnica.test.mjs",
+                      "sha256":  "ad91e056672e52f3e1108e0985cfb1ea420ab3da16e65cffdcfc414c63854963"
+                  },
+                  {
+                      "path":  "backend/imagenes.mjs",
+                      "sha256":  "1f58c4f9bd514131bdd99466c8439c021e9a3195d6b3491ff5862843429e038c"
+                  },
+                  {
+                      "path":  "backend/imagenes.test.mjs",
+                      "sha256":  "1680d13d8c9d76b4fec4122fb06c44651efc03cbdb20a2f8e698caba3aa78208"
+                  },
+                  {
+                      "path":  "backend/init-db.mjs",
+                      "sha256":  "8fc71f89f3242a6f8054b2510ec5852e96c95ee243df59bad272bc8a9419e490"
+                  },
+                  {
+                      "path":  "backend/inspect-db.mjs",
+                      "sha256":  "8a1f452adffdf8a79dc98b1d7d459a1b7c85363483d8ca96617cf48f8b365adf"
+                  },
+                  {
+                      "path":  "backend/login.test.mjs",
+                      "sha256":  "ea61d1df75289635065d00b540e095ae1e2fc3530002a03d82760dd6f942e8be"
+                  },
+                  {
+                      "path":  "backend/mailer.mjs",
+                      "sha256":  "6ceed1a61b18e80b26c3865e9627fe92b1abc6daf8c4ff874b67311d1fe78192"
+                  },
+                  {
+                      "path":  "backend/mailer.test.mjs",
+                      "sha256":  "b7461f365df44dc891a69f4a44ea8a0b217d5d4842f9e6fa4f7aad6efeef7523"
+                  },
+                  {
+                      "path":  "backend/migration-recovery.test.mjs",
+                      "sha256":  "249d1b6171e1cff26578b7fad0b8c671421ce136ff3cc21c3a0a21bc37fc053b"
+                  },
+                  {
+                      "path":  "backend/permisos.mjs",
+                      "sha256":  "5f8fc86c66b7157b54bf45ca7173f09e15ba24360d7c4214abe44607ceee8e10"
+                  },
+                  {
+                      "path":  "backend/permisos.test.mjs",
+                      "sha256":  "a3a2c1efe5f9b5dc5442adc18c9d45a3042943938434b0cabd8fa6378a26f163"
+                  },
+                  {
+                      "path":  "backend/permisos-frontend.test.mjs",
+                      "sha256":  "c0f4b7f53c83d7d1fb78d9b0ccd322c19492568785a9b3db4595c7001d55d64a"
+                  },
+                  {
+                      "path":  "backend/portal.mjs",
+                      "sha256":  "e4ebc5d48c7988327d41dae51e4acb205e891a6275acc75ca28e8d6e4e64fc78"
+                  },
+                  {
+                      "path":  "backend/portal.test.mjs",
+                      "sha256":  "193a4c5dce3ff0ad09b6da8500f915cdd340011c77335b6353f66dc5833fef7b"
+                  },
+                  {
+                      "path":  "backend/postgres-preparation.mjs",
+                      "sha256":  "3e13a7f10ad5acdd121f8e6cd5946a81a74bac1508fd53ef68a2f944943ad7b5"
+                  },
+                  {
+                      "path":  "backend/postgres-preparation.test.mjs",
+                      "sha256":  "702f2b4c780ce0fcd2520361fc0cf58d2b86c740b30bd79549796e9817e43e3d"
+                  },
+                  {
+                      "path":  "backend/preparar-portal.mjs",
+                      "sha256":  "02044db8e2f39031e890eba79b36a5aaa816d2379e8ed2b4414f5c7b1a1f9c8f"
+                  },
+                  {
+                      "path":  "backend/preparar-portal.test.mjs",
+                      "sha256":  "bc89561f7a4aafecf38df13764c712da62b33404b8278522924a02dbd6596f8c"
+                  },
+                  {
+                      "path":  "backend/recepcion-correcciones.mjs",
+                      "sha256":  "683c687383fdaabd626680dd0210bad3065fe19880377f0b559d852e39b698bd"
+                  },
+                  {
+                      "path":  "backend/recepciones.test.mjs",
+                      "sha256":  "4500c66107334c76d0d778a30c25e32f3afab59126c953fb65589b8bcf14fb5b"
+                  },
+                  {
+                      "path":  "backend/recepciones-frontend.test.mjs",
+                      "sha256":  "90fca5d59bd7f4c0b8f70af26c9a754dd992337e9bb47cb2cb8c8903886702a2"
+                  },
+                  {
+                      "path":  "backend/recuperacion.mjs",
+                      "sha256":  "9bf53fbaa101863f96cd5ba994df53c0fb4b338e707755fde9eaa20cc8cc383e"
+                  },
+                  {
+                      "path":  "backend/recuperacion.test.mjs",
+                      "sha256":  "27e9108c35b9d12a8e045b3c158f1cfde115c64fbdfb1e0ed9d905421330b8da"
+                  },
+                  {
+                      "path":  "backend/reservas.test.mjs",
+                      "sha256":  "658462377596d7548a8636dba8b8bd076e30614cc672fa158e28218121c9362f"
+                  },
+                  {
+                      "path":  "backend/server.mjs",
+                      "sha256":  "4282237e93a707ea9b0600c99063930188fee7b84702a086fb6c1c3dc15a83e1"
+                  },
+                  {
+                      "path":  "backend/test-fotografias.mjs",
+                      "sha256":  "e577dd7820ce71b1f54529f9a1e0d709b022ab59734eb7ab668a5028e00ed947"
+                  },
+                  {
+                      "path":  "backend/verify-db.mjs",
+                      "sha256":  "f43d7c12e025b0b58bf5b02e73f5caef6ef4ebefc425a23376e90be7363461a9"
+                  },
+                  {
+                      "path":  "database/certs/supabase-prod-ca-2021.crt",
+                      "sha256":  "1dcaafbf6fda7f21e34ff35825c1a1354408ea11e5839157e690af851c73453a"
+                  },
+                  {
+                      "path":  "database/migrations/20261022_hu5_hu10.sql",
+                      "sha256":  "15d18beb07e3d34e92c8883a64364bea67345bce4f0ae48a0c7eca62f5fbd4f7"
+                  },
+                  {
+                      "path":  "database/migrations/20261026_hu9a.sql",
+                      "sha256":  "df929e9e62ec832ded1f76ad136a661af3016e842d8f698d9d4e4faf71030425"
+                  },
+                  {
+                      "path":  "database/migrations/20261026_portal_multirrol.sql",
+                      "sha256":  "d4e396c73e7be50b9cc703e53fb248c3625c9525d2b1e957f9d236a890b87d40"
+                  },
+                  {
+                      "path":  "database/migrations/20261101_reajustes.sql",
+                      "sha256":  "1e60d60b0856ff20870f15436e99f149a941e6bf52ae1917a4b6f1d997b1528f"
+                  },
+                  {
+                      "path":  "database/schema.sql",
+                      "sha256":  "6bb9e3da964a5370c30cbd9a210d1d85d3ce97b6131bd9289b24acfd629e9814"
+                  },
+                  {
+                      "path":  "database/seeds.sql",
+                      "sha256":  "d4dd6eeb29ca8348850086ccdf67a8887cc7aa00313cf6044fd8cea6e1042f01"
+                  },
+                  {
+                      "path":  "frontend/alertas.css",
+                      "sha256":  "ccf3d24ae22d04b0f8cee2b4aaabf8e6c20c89f518fcd1ee491feac793dca205"
+                  },
+                  {
+                      "path":  "frontend/alertas.js",
+                      "sha256":  "c2d6c8079349f496b3dd415adc3bbeeb14290a7ec18dfbf8294526c7b6fdc9d8"
+                  },
+                  {
+                      "path":  "frontend/app.html",
+                      "sha256":  "2bdb19bf4b14512431b9753432dd3dd5504e344b3b65fd685ac0bf4a7d450f24"
+                  },
+                  {
+                      "path":  "frontend/app.js",
+                      "sha256":  "0c4edeccd5fb08a813919506abc9292cfcf80690a057136e19e5bfa510de9fc1"
+                  },
+                  {
+                      "path":  "frontend/assets/brand/logo-constructora.svg",
+                      "sha256":  "f9fa6f12f96a5b5ec5c233271a31388c44597aa45ff3dfc654a8f0f78708f80c"
+                  },
+                  {
+                      "path":  "frontend/assets/css/marca.css",
+                      "sha256":  "cd97e587a464dd48565a0c72811b0d7ea4b8d472bce8a8d289ec17386fd0c829"
+                  },
+                  {
+                      "path":  "frontend/assets/img/CREDITOS.md",
+                      "sha256":  "d4ac6770cda5bdea9817e27eff9dff2e37169327881a57f5daa91864e383843b"
+                  },
+                  {
+                      "path":  "frontend/assets/img/login-obra.jpg",
+                      "sha256":  "e561e4665a11da985bbfca7f21217a52f3516d1c7787a10557c9cafc0b949e39"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/camion-volteo.jpg",
+                      "sha256":  "9aa3cfb59bee0e60f671f003a5d352b3bf55a2249fdfa22fc2766f5a2171a059"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/cargador-frontal-950.jpg",
+                      "sha256":  "d15218b7bc22b10bd656e61dd8772ce85037d3a89e5f1c77924db7f3bc86a0fb"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/excavadora-cat-336.jpg",
+                      "sha256":  "26bd41bc6d668eaa350f934605f1c1ba600803320731b689f48c92fb7f94c57d"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/excavadora-cat-336-b.jpg",
+                      "sha256":  "4892682df8978645a476b149f58350cf50fd3d1b4ee529f11c9bccb9a27c8e9c"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/grua-telescopica.jpg",
+                      "sha256":  "6b87230540183fd8968cc2f54732b0ccd59da16d2cd311407bd32d78d9e772bb"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/manipulador-telescopico.jpg",
+                      "sha256":  "35d7dd7c85487409ca0fec550b3529cddf1c6636d9120b162f5b372ebad294f6"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/mezcladora-concreto.jpg",
+                      "sha256":  "49b35a3ee49116039b820b16a6ab195324bd98a629527ff60ecb535944090bac"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/minicargador.jpg",
+                      "sha256":  "bc65a39c530fd1618496c81c8c4dba6cde9dc078f49f50b5b1ae487a4ed97618"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/motoniveladora-140.jpg",
+                      "sha256":  "52a98676e66245f11ebc8cb8fa04923afc8bd05c0f824cb1c30164c9bb8b95fa"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/retroexcavadora-jcb-3cx.jpg",
+                      "sha256":  "331cfc022aeaac9b6f540feaac6b231c62e687033173c600843fc932a3eb7841"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/retroexcavadora-jcb-3cx-b.jpg",
+                      "sha256":  "639c422c1e0570f406fddb5cc204c79ad63927d7859d8795eef060376882a1a5"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/rodo-compactador.jpg",
+                      "sha256":  "4744e6acbac5379175bf175823a26a4f9dc384655ad06f4e8b3434deb3ab50d0"
+                  },
+                  {
+                      "path":  "frontend/assets/img/maquinaria/tractor-oruga-d6.jpg",
+                      "sha256":  "ee8fbf25e1b319b6a681e4e6de3c6cf6b65e68d88a3dbe7a0b32cf756e97127f"
+                  },
+                  {
+                      "path":  "frontend/assets/js/auth-ui.js",
+                      "sha256":  "3fef69b8592d56db2a54414fa985dd18acc8d6b9826e214bb4009ab7f519d423"
+                  },
+                  {
+                      "path":  "frontend/assets/js/icons.js",
+                      "sha256":  "5d3290902652cff52aba32be750506773a49469646bb5143bb9870599e6fef8b"
+                  },
+                  {
+                      "path":  "frontend/assets/js/portal.js",
+                      "sha256":  "ba8b959f5faa4b88d197236b441a2094f478e029ab6b41a7d625abd839b6c561"
+                  },
+                  {
+                      "path":  "frontend/assets/js/ui.js",
+                      "sha256":  "eee17e065e2fc1e245e951b371bd82893cb4ae026338f2ae95ce96642f2bb531"
+                  },
+                  {
+                      "path":  "frontend/assets/js/views/gestion.js",
+                      "sha256":  "e434f86e6de2b768f123153d200b9fba215a019f50a8a1e5b9b43ce2b85ef796"
+                  },
+                  {
+                      "path":  "frontend/assets/js/views/inicio.js",
+                      "sha256":  "c56a2d0ce1a70347651a9c0db12f562d451c92381b2483ce4f7b2bac23203412"
+                  },
+                  {
+                      "path":  "frontend/assets/js/views/pedidos.js",
+                      "sha256":  "e178b1961cf0e5bd2ca5922560df87f2400903595a2eabf914281bd291702c6f"
+                  },
+                  {
+                      "path":  "frontend/assets/js/views/productos.js",
+                      "sha256":  "0e6547b5685611bf8ef953605be19668d872ff731ec582d01dc2fe1c47c6b0bd"
+                  },
+                  {
+                      "path":  "frontend/assets/js/views/tienda.js",
+                      "sha256":  "fd80c4c27b4c59ab67e44df56740b25c4b1d0cd63f6e696fcd903ef5a33c1da9"
+                  },
+                  {
+                      "path":  "frontend/auth-form.js",
+                      "sha256":  "8fedfc14f44a2965b15b9f129e2ff49398aaf7c83cb0ae0badab47a19c50953d"
+                  },
+                  {
+                      "path":  "frontend/cobros.mjs",
+                      "sha256":  "c3fcbc6851f99dad159fa32a3e14df6ad4ab235003f06c274d26a80c2d69a2a9"
+                  },
+                  {
+                      "path":  "frontend/creditos.html",
+                      "sha256":  "0bcbfd8babc4b537ffad6b1094948005d1204cf06213679ab2d32f90c1dac11e"
+                  },
+                  {
+                      "path":  "frontend/despacho.js",
+                      "sha256":  "61c84d262c325d3c62c8ffbada9599d124ee4dd386c6f366b73498dae298445a"
+                  },
+                  {
+                      "path":  "frontend/entrega.css",
+                      "sha256":  "af0d4ba932a9b6350d79cd68494579524d2ef640b9f92ccac30ff5315c67a1d6"
+                  },
+                  {
+                      "path":  "frontend/entrega.js",
+                      "sha256":  "af51c5e217d742b765af989f4d9f9ac8c50710013a51218f4684609c112a3a8c"
+                  },
+                  {
+                      "path":  "frontend/favicon.svg",
+                      "sha256":  "9fcb1223a7031468a4d64f7b65f2e06a1218745db84bc658899d23218a7f4c77"
+                  },
+                  {
+                      "path":  "frontend/ficha-tecnica.mjs",
+                      "sha256":  "5b037be1555aeaa1a156e738cef31af0091f92c5ceb7b8cb131ab21d2b05e8fc"
+                  },
+                  {
+                      "path":  "frontend/firma.js",
+                      "sha256":  "360f85271a93b31e3556b82224d5de12d75e3bddd26113a7731c1ad0fbca8ef2"
+                  },
+                  {
+                      "path":  "frontend/firma-datos.mjs",
+                      "sha256":  "6cc11a47ab1809fc5f1ebf9968623a41c84a87cedc7bfd299ed7d8732502c0c8"
+                  },
+                  {
+                      "path":  "frontend/index.html",
+                      "sha256":  "67fada7bdb2f2aa7424e19ca32d22c037b81e80ba0f75e55b9cda1fbdc01ba1d"
+                  },
+                  {
+                      "path":  "frontend/login.html",
+                      "sha256":  "75d36200c8166449631fabec0d486d65fc2d6b0f4ad4c09c7c6feaffef89ecca"
+                  },
+                  {
+                      "path":  "frontend/login.js",
+                      "sha256":  "db2b7dd14f0760b4b305378c40b24a57e918ae395863a77634f1f46fa3d3440e"
+                  },
+                  {
+                      "path":  "frontend/recepcion.js",
+                      "sha256":  "5992654097b38c16bfc1826b9b78cf2d80b2882e61dfa6910cbeefe491957578"
+                  },
+                  {
+                      "path":  "frontend/recuperar.html",
+                      "sha256":  "1d8e719f02a38335ac3729746e9fb2dcb265996bd33d69b3b350ab1a81665e18"
+                  },
+                  {
+                      "path":  "frontend/recuperar.js",
+                      "sha256":  "aa34bf161cdd2a544f70bde5e19ad822a3308c67f4507ce5a3cc347d0d47130f"
+                  },
+                  {
+                      "path":  "frontend/registro.html",
+                      "sha256":  "cf3168e8faf46ffdd6ee8ea1cefc793feda234edf49e980cee58d6aedcfc9e77"
+                  },
+                  {
+                      "path":  "frontend/registro.js",
+                      "sha256":  "b62958f6d8de3480ba5321d380b38dfd831ba3de54546060da492964a4a098d3"
+                  },
+                  {
+                      "path":  "frontend/restablecer.html",
+                      "sha256":  "326647e9ae34be81ede113f0101fec810a2eee0d6efc0608762f4a1fc5cee5e7"
+                  },
+                  {
+                      "path":  "frontend/restablecer.js",
+                      "sha256":  "897898088a567f86cc175d4aa413d08e620be081205afbf52b771be3b728947f"
+                  },
+                  {
+                      "path":  "frontend/sesion.js",
+                      "sha256":  "37f1ed28f0ef179b346527545637d170efab3b191ad17a8e302dc7330f70c889"
+                  },
+                  {
+                      "path":  "frontend/styles.css",
+                      "sha256":  "aa4bc4947a45dec7bb53974dbaff591e99c72b685390849315ebf8a2f5e2f28a"
+                  },
+                  {
+                      "path":  "package.json",
+                      "sha256":  "684e3a60fa6fb68baa54d64f5d5a258bff76e55f104ac84e9fce255ac7d06425"
+                  },
+                  {
+                      "path":  "package-lock.json",
+                      "sha256":  "25d393ddd30dafc2e0cd571a173cb77d11e55bf0f7018f15790e2ddb05cd6d70"
+                  }
+              ]
+}

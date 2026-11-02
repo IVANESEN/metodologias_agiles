@@ -9,19 +9,21 @@ import {
 import { tienePermiso, ROLES, ROLES_PORTAL } from './permisos.mjs';
 import { FORMAS_PAGO } from './contrato-legal.mjs';
 import { hoyElSalvador } from './contratos-por-vencer.mjs';
+import { dateRangesOverlap, occupiedRanges, rentalEligibility, rentalEligibilitySql, unoccupiedSql } from './alquiler-reglas.mjs';
+import { validarFotografia } from './imagenes.mjs';
 
 const MAX_PRODUCT_BODY_BYTES = 7_400_000;
 const MAX_IMAGE_BYTES = 1_100_000;
 const MAX_IMAGES = 6;
 const DAY_MS = 86_400_000;
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
-const ESTADOS_PEDIDO = ['PENDIENTE', 'APROBADO', 'EN_ENTREGA', 'COMPLETADO', 'CANCELADO', 'RECHAZADO'];
+const ESTADOS_PEDIDO = ['PENDIENTE', 'APROBADO', 'EN_ENTREGA', 'COMPLETADO', 'FINALIZADO', 'DEVUELTO', 'CANCELADO', 'RECHAZADO'];
 const ESTADOS_ACTIVOS = ['PENDIENTE', 'APROBADO', 'EN_ENTREGA'];
 const TRANSICIONES = Object.freeze({
   PENDIENTE: ['APROBADO', 'RECHAZADO', 'CANCELADO'],
   APROBADO: ['EN_ENTREGA', 'CANCELADO'],
   EN_ENTREGA: ['COMPLETADO'],
-  COMPLETADO: [], CANCELADO: [], RECHAZADO: [],
+  COMPLETADO: ['FINALIZADO'], FINALIZADO: ['DEVUELTO'], DEVUELTO: [], CANCELADO: [], RECHAZADO: [],
 });
 const ESTADOS_PUBLICACION = ['BORRADOR', 'PENDIENTE', 'ACTIVO', 'RECHAZADO', 'ARCHIVADO'];
 export const TIPOS_MAQUINARIA = Object.freeze(['Excavadora', 'Retroexcavadora', 'Tractor de oruga', 'Cargador frontal',
@@ -138,18 +140,6 @@ function productOut(row) {
   };
 }
 
-async function occupiedRanges(db, machineId) {
-  const { rows } = await db.query(`
-    SELECT c.fecha_inicio::text, c.fecha_fin::text, 'CONTRATO' AS origen FROM contrato_maquinaria cm
-      JOIN contrato c ON c.id = cm.contrato_id WHERE cm.maquinaria_id = $1 AND c.estado = 'CONFIRMADO'
-      AND c.fecha_fin >= $2::date
-    UNION ALL
-    SELECT i.fecha_inicio::text, i.fecha_fin::text, 'PEDIDO' FROM pedido_item i JOIN pedido p ON p.id = i.pedido_id
-      WHERE i.maquinaria_id = $1 AND i.modalidad = 'RENTA' AND p.estado = ANY($3::text[]) AND i.fecha_fin >= $2::date
-    ORDER BY 1`, [machineId, hoyElSalvador(), ESTADOS_ACTIVOS]);
-  return rows;
-}
-
 async function findCatalog(db, params) {
   const values = [];
   const p = (value) => { values.push(value); return `$${values.length}`; };
@@ -163,8 +153,16 @@ async function findCatalog(db, params) {
   const tipo = (params.get('tipo') || '').trim();
   if (tipo) where.push(`lower(m.tipo) = lower(${p(tipo.slice(0, 80))})`);
   const modalidad = params.get('modalidad');
-  if (modalidad === 'RENTA') where.push("m.modalidad IN ('RENTA','AMBAS')");
+  if (modalidad === 'RENTA') where.push(rentalEligibilitySql('m'));
   if (modalidad === 'VENTA') where.push("m.modalidad IN ('VENTA','AMBAS')");
+  const start = params.get('fecha_inicio');
+  const end = params.get('fecha_fin');
+  if (start !== null || end !== null) {
+    if (parseDate(start) === null || parseDate(end) === null || end < start) {
+      invalid('Indica un período de renta válido.', { fecha_inicio: 'Usa ambas fechas reales, con fin igual o posterior al inicio.' });
+    }
+    where.push(rentalEligibilitySql('m'), unoccupiedSql('m', p(start), p(end)));
+  }
   const condicion = params.get('condicion');
   if (['NUEVO', 'USADO', 'REACONDICIONADO'].includes(condicion)) where.push(`m.condicion = ${p(condicion)}`);
   const ciudad = (params.get('ciudad') || '').trim();
@@ -286,6 +284,17 @@ async function saveProduct(db, user, body, id = null) {
       existing = { ...existing, imagenes_raw: existing.imagenes };
     }
     const input = validateProduct(body, { existing, user });
+    // También las fotos del catálogo deben poder leerse por completo; la firma
+    // detectada en validateProduct sólo anticipa errores de formato comunes.
+    for (const image of input.imagenes) {
+      if (image.startsWith('data:')) {
+        try { await validarFotografia(image, { maxBytes: MAX_IMAGE_BYTES }); }
+        catch (error) {
+          if (error.code !== 'INVALID_PHOTO') throw error;
+          invalid('Revisa las fotografías del producto.', { imagenes: error.message });
+        }
+      }
+    }
     const firstUrl = input.imagenes.find((image) => !image.startsWith('data:')) || null;
     const values = [input.nombre, input.tipo, input.descripcion, fixed(input.tarifa_diaria), input.ubicacion, input.horometro,
       input.marca, input.modelo, input.anio, input.condicion, input.modalidad,
@@ -363,11 +372,10 @@ export async function priceCart(db, lines, { lock = false } = {}) {
       fail(409, 'PRODUCT_UNAVAILABLE', 'Uno de los equipos ya no está disponible en la tienda.');
     }
     if (line.modalidad === 'RENTA') {
-      if (machine.modalidad === 'VENTA') fail(409, 'RENT_NOT_ALLOWED', `${machine.nombre} solo está disponible para compra.`);
-      const overlaps = (await occupiedRanges(db, machine.id)).some((range) =>
-        range.fecha_inicio <= line.fecha_fin && range.fecha_fin >= line.fecha_inicio);
+      if (!rentalEligibility(machine)) fail(409, 'RENT_NOT_ALLOWED', `${machine.nombre} no está habilitada para renta.`);
+      const overlaps = (await occupiedRanges(db, machine.id)).some((range) => dateRangesOverlap(range, line));
       const repeated = result.some((other) => other.maquinaria_id === machine.id && other.modalidad === 'RENTA' &&
-        other.fecha_inicio <= line.fecha_fin && other.fecha_fin >= line.fecha_inicio);
+        dateRangesOverlap(other, line));
       if (overlaps || repeated) {
         fail(409, 'DATE_CONFLICT', `${machine.nombre} ya está reservada en esas fechas. Elige otro período.`);
       }
@@ -512,7 +520,8 @@ async function orderDetail(db, user, id) {
       marca: item.marca, modelo: item.modelo, imagen: imageUrls({ ...item, id: item.maquinaria_id })[0] || null,
     })),
     eventos,
-    transiciones: STAFF.includes(user.rol) ? TRANSICIONES[order.estado] : [],
+    transiciones: STAFF.includes(user.rol)
+      ? TRANSICIONES[order.estado].filter((state) => state !== 'FINALIZADO' || order.tipo !== 'COMPRA') : [],
     cancelable: user.rol === 'cliente' && order.estado === 'PENDIENTE',
   };
   if (user.rol === 'proveedor') {
@@ -530,12 +539,24 @@ async function orderDetail(db, user, id) {
 
 async function changeOrderState(db, user, id, nuevo, nota) {
   return db.transaction(async (tx) => {
-    const { rows } = await tx.query('SELECT id, estado, cliente_id FROM pedido WHERE id = $1 FOR UPDATE', [id]);
+    // El orden de bloqueo coincide con contratos y altas de pedidos, incluso al
+    // devolver inventario de una compra cancelada. Los items son inmutables.
+    await tx.query(`SELECT m.id FROM maquinaria m WHERE m.id IN (
+      SELECT maquinaria_id FROM pedido_item WHERE pedido_id = $1
+    ) ORDER BY m.id FOR UPDATE`, [id]);
+    const { rows } = await tx.query('SELECT id, estado, cliente_id, tipo FROM pedido WHERE id = $1 FOR UPDATE', [id]);
     const order = rows[0];
     if (!order) fail(404, 'ORDER_NOT_FOUND', 'No se encontró el pedido.');
     if (user.rol === 'cliente' && order.cliente_id !== user.id) fail(404, 'ORDER_NOT_FOUND', 'No se encontró el pedido.');
     if (!TRANSICIONES[order.estado].includes(nuevo)) {
       fail(409, 'INVALID_TRANSITION', `Un pedido ${order.estado.toLowerCase().replace('_', ' ')} no puede pasar a ${nuevo.toLowerCase().replace('_', ' ')}.`);
+    }
+    if (nuevo === 'FINALIZADO') {
+      const { rows: rentals } = await tx.query(`SELECT MAX(fecha_fin)::text AS fecha_fin FROM pedido_item
+        WHERE pedido_id = $1 AND modalidad = 'RENTA'`, [id]);
+      if (order.tipo === 'COMPRA' || !rentals[0]?.fecha_fin || rentals[0].fecha_fin >= hoyElSalvador()) {
+        fail(409, 'RENTAL_NOT_FINISHED', 'La renta sólo puede finalizar después de su último día incluido.');
+      }
     }
     if (['CANCELADO', 'RECHAZADO'].includes(nuevo)) {
       await tx.query(`UPDATE maquinaria m SET stock = m.stock + i.cantidad FROM pedido_item i
@@ -549,6 +570,8 @@ async function changeOrderState(db, user, id, nuevo, nota) {
       APROBADO: 'Disponibilidad confirmada. Preparando documentación y traslado.',
       EN_ENTREGA: 'El equipo salió del patio hacia la obra.',
       COMPLETADO: 'Entrega completada y recibida en obra.',
+      FINALIZADO: 'Período de renta finalizado. Pendiente de registrar devolución.',
+      DEVUELTO: 'Devolución del equipo registrada.',
       CANCELADO: 'Pedido cancelado.',
       RECHAZADO: 'Pedido rechazado.',
     };
@@ -660,11 +683,11 @@ async function dashboard(db, user) {
     result.kpis = {
       activos: await count(`SELECT COUNT(*) AS total FROM pedido WHERE cliente_id = $1 AND estado = ANY($2::text[])`, [user.id, ESTADOS_ACTIVOS]),
       rentas_en_curso: await count(`SELECT COUNT(*) AS total FROM pedido_item i JOIN pedido p ON p.id = i.pedido_id
-        WHERE p.cliente_id = $1 AND i.modalidad = 'RENTA' AND p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO')
+        WHERE p.cliente_id = $1 AND i.modalidad = 'RENTA' AND p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO')
         AND i.fecha_inicio <= $2::date AND i.fecha_fin >= $2::date`, [user.id, hoyElSalvador()]),
       invertido: await count(`SELECT COALESCE(SUM(total), 0) AS total FROM pedido WHERE cliente_id = $1
         AND estado NOT IN ('CANCELADO','RECHAZADO')`, [user.id]),
-      completados: await count(`SELECT COUNT(*) AS total FROM pedido WHERE cliente_id = $1 AND estado = 'COMPLETADO'`, [user.id]),
+      completados: await count(`SELECT COUNT(*) AS total FROM pedido WHERE cliente_id = $1 AND estado IN ('COMPLETADO','FINALIZADO','DEVUELTO')`, [user.id]),
     };
     result.pedidos = (await listOrders(db, user, new URLSearchParams())).slice(0, 5);
     result.destacados = (await findCatalog(db, new URLSearchParams())).productos.slice(0, 4);
@@ -673,7 +696,7 @@ async function dashboard(db, user) {
       WHERE proveedor_id = $1 GROUP BY estado_publicacion`, [user.id]);
     const { valores } = await readConfig(db);
     const bruto = await count(`SELECT COALESCE(SUM(i.subtotal), 0) AS total FROM pedido_item i JOIN pedido p ON p.id = i.pedido_id
-      WHERE i.proveedor_id = $1 AND p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO')`, [user.id]);
+      WHERE i.proveedor_id = $1 AND p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO')`, [user.id]);
     result.kpis = {
       productos: Object.fromEntries(ESTADOS_PUBLICACION.map((estado) => [estado, rows.find((row) => row.estado === estado)?.total || 0])),
       ventas_brutas: bruto, comision_pct: valores.comision_proveedor,
@@ -695,7 +718,7 @@ async function dashboard(db, user) {
       clientes: await count("SELECT COUNT(*) AS total FROM usuario WHERE rol = 'cliente' AND activo"),
       proveedores: await count("SELECT COUNT(*) AS total FROM usuario WHERE rol = 'proveedor' AND activo"),
       catalogo: await count("SELECT COUNT(*) AS total FROM maquinaria WHERE estado_publicacion = 'ACTIVO' AND disponible"),
-      ingresos: await count("SELECT COALESCE(SUM(total - deposito), 0) AS total FROM pedido WHERE estado IN ('APROBADO','EN_ENTREGA','COMPLETADO')"),
+      ingresos: await count("SELECT COALESCE(SUM(total - deposito), 0) AS total FROM pedido WHERE estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO')"),
       entregas_hoy: await count(`SELECT COUNT(*) AS total FROM pedido_item i JOIN pedido p ON p.id = i.pedido_id
         WHERE p.estado IN ('APROBADO','EN_ENTREGA') AND i.fecha_inicio = $1::date`, [hoyElSalvador()]),
     };
@@ -710,7 +733,7 @@ async function dashboard(db, user) {
 
 async function reports(db) {
   const { rows: meses } = await db.query(`SELECT to_char(date_trunc('month', creado_en), 'YYYY-MM') AS mes,
-      COALESCE(SUM(total - deposito) FILTER (WHERE estado IN ('APROBADO','EN_ENTREGA','COMPLETADO')), 0) AS ingresos,
+      COALESCE(SUM(total - deposito) FILTER (WHERE estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO')), 0) AS ingresos,
       COUNT(*)::int AS pedidos
     FROM pedido WHERE creado_en >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '5 months'
     GROUP BY 1 ORDER BY 1`);
@@ -724,11 +747,11 @@ async function reports(db) {
   }
   const { rows: categorias } = await db.query(`SELECT m.tipo, COALESCE(SUM(i.subtotal), 0) AS monto, COUNT(i.id)::int AS lineas
     FROM pedido_item i JOIN pedido p ON p.id = i.pedido_id JOIN maquinaria m ON m.id = i.maquinaria_id
-    WHERE p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO') GROUP BY m.tipo ORDER BY monto DESC LIMIT 6`);
+    WHERE p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO') GROUP BY m.tipo ORDER BY monto DESC LIMIT 6`);
   const { rows: roles } = await db.query('SELECT rol, COUNT(*)::int AS total FROM usuario GROUP BY rol ORDER BY rol');
   const { valores } = await readConfig(db);
   const proveedores = Number((await db.query(`SELECT COALESCE(SUM(i.subtotal), 0) AS total FROM pedido_item i
-    JOIN pedido p ON p.id = i.pedido_id WHERE i.proveedor_id IS NOT NULL AND p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO')`)).rows[0].total);
+    JOIN pedido p ON p.id = i.pedido_id WHERE i.proveedor_id IS NOT NULL AND p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO')`)).rows[0].total);
   return {
     series, roles,
     categorias: categorias.map((row) => ({ ...row, monto: Number(row.monto) })),

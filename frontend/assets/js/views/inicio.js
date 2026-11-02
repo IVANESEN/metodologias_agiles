@@ -7,10 +7,10 @@ const kpi = ({ label, value, foot = '', ico, feature = false }) => `<div class="
 
 const ORDER_STEPS = ['PENDIENTE', 'APROBADO', 'EN_ENTREGA', 'COMPLETADO'];
 export function steps(estado) {
-  const index = ORDER_STEPS.indexOf(estado);
+  const index = ORDER_STEPS.indexOf(['FINALIZADO', 'DEVUELTO'].includes(estado) ? 'COMPLETADO' : estado);
   const labels = ['Recibido', 'Aprobado', 'En camino', 'Entregado'];
   return `<div class="steps" aria-label="Progreso del pedido">${labels.map((label, i) =>
-    `<div class="${index >= 0 && i < index ? 'done' : i === index ? (estado === 'COMPLETADO' ? 'done' : 'current') : ''}">${label}</div>`).join('')}</div>`;
+    `<div class="${index >= 0 && i < index ? 'done' : i === index ? (['COMPLETADO', 'FINALIZADO', 'DEVUELTO'].includes(estado) ? 'done' : 'current') : ''}">${label}</div>`).join('')}</div>`;
 }
 
 export function orderRow(order, { showClient = false } = {}) {

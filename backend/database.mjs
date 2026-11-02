@@ -238,11 +238,9 @@ export async function initializeDatabase(database, { existingReviewed = false, s
   }
   await database.transaction(async (tx) => {
     await tx.exec(schema);
-    // PGlite local: las bases creadas antes del portal conservan el CHECK de
-    // dos roles. En PostgreSQL remoto este cambio es una migración revisada.
-    await tx.exec(`ALTER TABLE usuario DROP CONSTRAINT IF EXISTS usuario_rol_check;
-      ALTER TABLE usuario ADD CONSTRAINT usuario_rol_check
-        CHECK (rol IN ('residente', 'gerente', 'admin', 'empleado', 'proveedor', 'cliente'));`);
+    // Las ampliaciones preservan todos los roles y estados históricos.
+    const { applyCompatibilityConstraints } = await import('./postgres-preparation.mjs');
+    await applyCompatibilityConstraints(tx);
     if (seed) await tx.exec(seeds);
   });
 }

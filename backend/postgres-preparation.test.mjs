@@ -38,7 +38,7 @@ test('Render prepara PostgreSQL sin revisión de Supabase y conserva evidencia d
       { schemaSql, seedsSql, dataApiReviewed: false }), { code: 'DATABASE_TLS_NOT_VERIFIED' });
     }
     const result = await initializePostgresDatabase(database, { schemaSql, seedsSql, dataApiReviewed: false });
-    assert.equal(result.createdTables.length, 14);
+    assert.equal(result.createdTables.length, 17);
     assert.equal(result.connection.privateNetwork, privateNetwork);
     assert.deepEqual(result.connection.tls, tls);
     assert.equal((await inspectPostgresDatabase(database)).dataApiPanelReviewRequired, false);
@@ -101,13 +101,15 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
     const result = await initializePostgresDatabase(database, reviewed);
     assert.deepEqual(result.createdTables,
       ['maquinaria', 'contrato', 'contrato_maquinaria', 'pago', 'usuario', 'sesion', 'token_recuperacion', 'recepcion_maquinaria',
-        'configuracion', 'pedido', 'pedido_item', 'pedido_evento', 'auditoria', 'entrega_programada']);
+        'configuracion', 'pedido', 'pedido_item', 'pedido_evento', 'auditoria', 'entrega_programada',
+        'recepcion_correccion', 'despacho_notificacion', 'despacho_intento']);
     assert.equal(result.seeded, true);
     assert.deepEqual(result.tables.map(({ name, rowCount }) => [name, rowCount]), [
-      ['auditoria', 0], ['configuracion', 7], ['contrato', 0], ['contrato_maquinaria', 0], ['entrega_programada', 0],
+      ['auditoria', 0], ['configuracion', 7], ['contrato', 0], ['contrato_maquinaria', 0],
+      ['despacho_intento', 0], ['despacho_notificacion', 0], ['entrega_programada', 0],
       ['maquinaria', 2], ['pago', 0],
       ['pedido', 0], ['pedido_evento', 0], ['pedido_item', 0],
-      ['recepcion_maquinaria', 0], ['sesion', 0], ['token_recuperacion', 0], ['usuario', 0],
+      ['recepcion_correccion', 0], ['recepcion_maquinaria', 0], ['sesion', 0], ['token_recuperacion', 0], ['usuario', 0],
     ]);
     assert.equal(result.connection.targetProjectVerified, false);
     assert.ok(!JSON.stringify(result).includes(secret));
@@ -214,7 +216,7 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
   await t.test('validación de arranque lee tablas y permisos sin aplicar migraciones ni semillas', async () => {
     operations.length = 0;
     const inventory = await assertPostgresReady(database);
-    assert.equal(inventory.appTables.length, 14);
+    assert.equal(inventory.appTables.length, 17);
     assert.ok(inventory.appTables.every((table) => table.rlsEnabled && table.apiPrivileges.length === 0 && table.policies.length === 0));
     assertReadOnly(operations);
   });

@@ -6,6 +6,12 @@ cotizador, pedidos, alta de productos de proveedores, tasas configurables y audi
 Ver [SPRINT4_PORTAL.md](SPRINT4_PORTAL.md) para pantallas, cuentas de prueba,
 escenarios y migración.
 
+Los [reajustes del 1 de noviembre](doc/REAJUSTES_20261101.md) documentan reglas de
+renta, corrección de evidencias, despacho, PDF y validación. La
+[trazabilidad de historias](doc/TRAZABILIDAD_REAJUSTES.md) distingue integración,
+pruebas actuales y aceptación pendiente. Antes de usar esta versión con PostgreSQL
+existente, revisar [migración y recuperación](DESPLIEGUE.md#actualizaciones-del-esquema-y-recuperación).
+
 Sistema de alquiler de maquinaria. Incluye HU3 (consulta por tipo, fechas y ciudad) y contratos con una o varias máquinas.
 
 Sprint 1 también incluye reserva por fechas (HU8), formalización del contrato
@@ -25,11 +31,17 @@ npm ci
 npm test
 npm start
 ```
+El punto de entrada real es `backend/server.mjs`; `backend/server.js` estaba vacío,
+no tenía referencias y se retiró. En PowerShell puede usarse `npm.cmd` si la política
+de ejecución impide invocar `npm.ps1`.
+
+La plantilla [.env.example](.env.example) no contiene credenciales. Para desarrollo
+local, cópiala a `.env` únicamente si todavía no existe y deja `DATABASE_URL` vacío.
+`DEMO_DATA=false` evita crear cuentas de demostración; para un entorno de prueba
+aislado se puede habilitar explícitamente `DEMO_DATA=true`. No uses esas cuentas
+en un ambiente compartido. `npm test` usa bases temporales sin cargar `.env`.
+
 Si el entorno restringe procesos y `npm test` falla con `spawn EPERM`, ejecuta `node --test --test-isolation=none backend/*.test.mjs`.
-si lo tienes instalado
-```sh
-npm.cmd start
-```
 
 Abrir `http://localhost:3000`. En desarrollo, sin `DATABASE_URL`, se usa PostgreSQL embebido (PGlite) y los datos se conservan en `data/`. En producción se requiere `DATABASE_URL` de PostgreSQL. Solo PGlite aplica el esquema y sus cambios al iniciar; una base remota debe inspeccionarse e inicializarse explícitamente como se explica a continuación.
 
@@ -45,11 +57,11 @@ El backend conserva PostgreSQL y el cliente `pg`; utiliza `DATABASE_URL` sin añ
    if (-not (Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Destination .env }
    ```
 
-   Abre `.env` en tu editor y sustituye personalmente el marcador de `DATABASE_URL` por la cadena del panel, entre comillas dobles. Sustituye `[YOUR-PASSWORD]` por la contraseña de la base. No pegues la contraseña ni la cadena en el chat, comandos de terminal, capturas o commits. `.env` está excluido de Git; `.env.example` contiene solo marcadores.
+   Abre `.env` en tu editor y completa `DATABASE_URL` con la cadena del panel, entre comillas dobles. Sustituye `[YOUR-PASSWORD]` de esa cadena por la contraseña de la base. No pegues la contraseña ni la cadena en el chat, comandos de terminal, capturas o commits. `.env` está excluido de Git; `.env.example` contiene únicamente opciones sin secretos.
 
    Codifica únicamente la contraseña para la URI: `@` → `%40`, `:` → `%3A`, `/` → `%2F`, `?` → `%3F`, `#` → `%23`, `%` → `%25`, `+` → `%2B`, `&` → `%26` y espacio → `%20`. No codifiques toda la cadena ni vuelvas a codificar una contraseña que ya lo esté. Realiza la conversión localmente, sin enviar el secreto a sitios web.
 
-3. Sustituye `SUPABASE_PROJECT_REF` por la referencia del mismo proyecto de la URI. Conserva `DATABASE_SCHEMA=constructora_private` y `DATABASE_SSL_CA_FILE=database/certs/supabase-prod-ca-2021.crt`, como indica `.env.example`. El repositorio incluye ese certificado raíz público de Supabase; no contiene credenciales. Su procedencia es la propiedad `ssl:certificate_url` del [código oficial de Supabase Studio](https://github.com/supabase/supabase/blob/master/apps/studio/hooks/custom-content/custom-content.json), que apunta a esta [descarga HTTPS del certificado de producción](https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt).
+3. Completa `SUPABASE_PROJECT_REF` con la referencia del mismo proyecto de la URI. Conserva `DATABASE_SCHEMA=constructora_private` y configura `DATABASE_SSL_CA_FILE=database/certs/supabase-prod-ca-2021.crt`. El repositorio incluye ese certificado raíz público de Supabase; no contiene credenciales. Su procedencia es la propiedad `ssl:certificate_url` del [código oficial de Supabase Studio](https://github.com/supabase/supabase/blob/master/apps/studio/hooks/custom-content/custom-content.json), que apunta a esta [descarga HTTPS del certificado de producción](https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt).
 
    El cliente valida el proyecto y el dominio del pooler, y siempre verifica el certificado y el nombre del servidor TLS. Un `sslmode=require` o `sslmode=verify-full` del panel se procesa manteniendo esa verificación. Si Supabase renueva el certificado o tu proyecto requiere otra CA, descarga la correspondiente desde **Database settings → SSL Configuration** y cambia `DATABASE_SSL_CA_FILE` a su ruta local. Si esta variable está vacía se usa la confianza del sistema, que puede no reconocer la CA de Supabase. No uses `rejectUnauthorized=false` ni `NODE_TLS_REJECT_UNAUTHORIZED=0`. [TLS de Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres#ssl), [TLS de node-postgres](https://node-postgres.com/features/ssl).
 
@@ -245,12 +257,12 @@ Ejemplo del cuerpo de un pago (sustituir el UUID por uno nuevo para cada pago di
 
 ### Preparar la base existente
 
-PGlite aplica `database/schema.sql` automáticamente al iniciar. No se necesita configuración nueva. Para PostgreSQL/Supabase, desde esta versión y **antes de publicar en main**, preparar explícitamente la base con el código actualizado; el arranque remoto no ejecuta migraciones. El push a `main` activa el despliegue a Render descrito en [DESPLIEGUE.md](DESPLIEGUE.md).
+PGlite aplica `database/schema.sql` automáticamente al iniciar. Para PostgreSQL/Supabase, `npm start` ejecuta primero `db:migrate`: aplica únicamente la ampliación registrada `20261101_reajustes` sobre la versión previa compatible de 14 tablas, sin semillas ni reescritura de datos históricos. Si el esquema ya está actualizado, omite el DDL; una base vacía requiere la instalación explícita siguiente. El push a `main` activa el despliegue a Render descrito en [DESPLIEGUE.md](DESPLIEGUE.md#actualizaciones-del-esquema-y-recuperación).
 
 1. Conservar la conexión del entorno objetivo en `.env` y verificar en el panel que el esquema privado no esté expuesto, según la guía anterior. No modificar credenciales ni desactivar TLS.
 2. Ejecutar `npm.cmd run db:inspect` y revisar estructura, permisos y cantidades de filas. Deben conservarse los contratos y equipos existentes; si aparece una tabla `pago` incompatible u objetos en otro esquema, resolver esa revisión antes de continuar.
 3. Después de esa revisión, ejecutar `npm.cmd run db:init -- --existing-reviewed --schema-only`. La migración añade `pago` y su índice, aplica la protección existente y no carga semillas ni pagos. Es idempotente. Para una base nueva y vacía, usar `npm.cmd run db:init -- --schema-only`.
-4. Ejecutar `npm.cmd run db:verify` y después `npm.cmd start`. La comprobación de arranque exige la nueva tabla y sus restricciones. La versión anterior sigue siendo compatible con la tabla adicional durante la transición.
+4. Ejecutar `npm.cmd run db:verify` y después `npm.cmd start`. La comprobación de arranque exige el esquema y sus restricciones actuales. Para compatibilidad durante la transición, recuperación y límites del rollback, seguir [DESPLIEGUE.md](DESPLIEGUE.md#actualizaciones-del-esquema-y-recuperación).
 
 ### Validar cobros
 

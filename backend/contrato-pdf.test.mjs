@@ -8,7 +8,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createDatabase, initializeDatabase } from './database.mjs';
 import { createServer } from './app.mjs';
 import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mjs';
-import { buildContractPdf, safeText } from './contrato-pdf.mjs';
+import { buildContractPdf, safeText, textoContratoCompatible } from './contrato-pdf.mjs';
 
 // Ruta normal (no file://) a las fuentes estándar de pdfjs, así no muestra el
 // aviso de standardFontDataUrl. Termina en '/' y no en path.sep porque pdfjs
@@ -123,6 +123,60 @@ test('HU6b: descarga del contrato en PDF', async (t) => {
     assert.ok(text.includes(`Total del arrendamiento: ${usd(contrato.total)}`));
   });
 
+  await t.test('H11: conserva nombres completos entre PostgreSQL, API y PDF', async () => {
+    const cliente = 'José Muñoz, Zoë Šimek y Œuvre €';
+    const maquinaria = 'Grúa Ñandú ŠKODA – Œuvre';
+    await database.query('UPDATE maquinaria SET nombre = $1 WHERE id = 2', [maquinaria]);
+    const contratoId = await crear({ ...completo, maquinaria_id: 2, cliente,
+      fecha_inicio: '2031-05-01', fecha_fin: '2031-05-03' });
+    const contrato = await registro(contratoId);
+    const almacenado = (await database.query(`SELECT c.cliente, cm.maquinaria_nombre FROM contrato c
+      JOIN contrato_maquinaria cm ON cm.contrato_id = c.id WHERE c.id = $1`, [contratoId])).rows[0];
+    assert.equal(almacenado.cliente, cliente);
+    assert.equal(almacenado.maquinaria_nombre, maquinaria);
+    assert.equal(contrato.cliente, almacenado.cliente);
+    assert.equal(contrato.maquinarias[0].maquinaria_nombre, almacenado.maquinaria_nombre);
+    const { text } = await pdfText((await descargar(contratoId)).buffer, contratoId);
+    assert.ok(text.includes(cliente));
+    assert.ok(text.includes(maquinaria));
+    assert.ok(!text.includes('?'));
+  });
+
+  await t.test('H11: la API rechaza texto no representable antes de guardar', async () => {
+    const count = async () => Number((await database.query('SELECT COUNT(*) AS n FROM contrato')).rows[0].n);
+    const before = await count();
+    for (const field of ['cliente', 'ciudad', 'operador', 'condiciones_especiales']) {
+      const response = await fetch(`${base}/api/contratos`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...completo, [field]: 'Nombre 北京 😀' }),
+      });
+      assert.equal(response.status, 400, field);
+      assert.match((await response.json()).error.fields[field], /PDF/);
+    }
+    await database.query('UPDATE maquinaria SET nombre = $1 WHERE id = 2', ['Grúa 北京']);
+    const response = await fetch(`${base}/api/contratos`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...completo, maquinaria_id: 2,
+        fecha_inicio: '2031-06-01', fecha_fin: '2031-06-03' }),
+    });
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error.message, /PDF/);
+    assert.equal(await count(), before);
+  });
+
+  await t.test('H11: un nombre histórico incompatible se informa sin fabricar un PDF alterado', async () => {
+    await database.query('UPDATE contrato SET cliente = $1 WHERE id = $2', ['Cliente 北京', id]);
+    try {
+      const response = await fetch(`${base}/api/contratos/${id}/pdf`);
+      assert.equal(response.status, 409);
+      assert.match(response.headers.get('content-type'), /^application\/json/);
+      assert.equal((await response.json()).error.code, 'UNSUPPORTED_PDF_TEXT');
+      assert.equal((await registro(id)).cliente, 'Cliente 北京');
+    } finally {
+      await database.query('UPDATE contrato SET cliente = $1 WHERE id = $2', [completo.cliente, id]);
+    }
+  });
+
   await t.test('un ID que no existe o mal formado responde JSON, nunca un PDF', async () => {
     for (const [ruta, status, code] of [
       ['00000000-0000-4000-8000-000000000000', 404, 'CONTRACT_NOT_FOUND'],
@@ -145,12 +199,15 @@ test('HU6b: descarga del contrato en PDF', async (t) => {
   });
 });
 
-test('safeText deja solo caracteres que Helvetica puede dibujar', () => {
-  assert.equal(safeText('Obra 😀 北京'), 'Obra ? ??');
+test('H11: safeText rechaza caracteres incompatibles sin sustituir nombres', () => {
+  assert.throws(() => safeText('Obra 😀 北京'), { code: 'UNSUPPORTED_PDF_TEXT' });
   assert.equal(safeText('Ñandú, José Pérez, acción'), 'Ñandú, José Pérez, acción');
   assert.equal(safeText('Pe\u0301rez'), 'Pérez');
   assert.equal(safeText('€ “comillas” — guion'), '€ “comillas” — guion');
-  assert.equal(safeText('línea\nsiguiente\u0007'), 'línea siguiente');
+  assert.equal(safeText('línea\nsiguiente'), 'línea siguiente');
+  assert.throws(() => safeText('nombre\u0007'), { code: 'UNSUPPORTED_PDF_TEXT' });
+  assert.equal(textoContratoCompatible('Šimek Œuvre Žižek'), true);
+  assert.equal(textoContratoCompatible('Nombre Кирилл'), false);
   assert.equal(safeText(null), '');
   assert.equal(safeText(undefined), '');
 });

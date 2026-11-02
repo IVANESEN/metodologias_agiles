@@ -51,6 +51,21 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          # Credenciales ficticias: el contenedor solo existe durante este job.
+          POSTGRES_USER: constructora_migration_test
+          POSTGRES_PASSWORD: migration_test_only
+          POSTGRES_DB: constructora_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U constructora_migration_test -d constructora_migration_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Descargar el codigo
         uses: actions/checkout@v5
@@ -78,8 +93,11 @@ jobs:
           fi
 
       # npm test ejecuta node --test backend/*.test.mjs.
-      # Las pruebas crean sus propias bases temporales PGlite.
+      # PGlite sigue aislado; la migración también usa PostgreSQL real local.
+      # Esta variable de prueba nunca configura DATABASE_URL de la aplicación.
       - name: Ejecutar las pruebas reales del equipo
+        env:
+          MIGRATION_TEST_DATABASE_URL: postgresql://constructora_migration_test:migration_test_only@127.0.0.1:5432/constructora_migration_test
         run: npm test
 
   # Solo se ejecuta en un push a main (incluido el merge de un PR) y unicamente

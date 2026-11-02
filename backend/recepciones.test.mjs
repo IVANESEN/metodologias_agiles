@@ -4,9 +4,7 @@ import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { createDatabase, initializeDatabase } from './database.mjs';
 import { createServer } from './app.mjs';
-
-const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z5ZkAAAAASUVORK5CYII=';
-const WEBP = 'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEAAUAmJaQAA3AA/v89WAAAAA==';
+import { PNG, WEBP, JPEG } from './test-fotografias.mjs';
 
 async function start(t) {
   const database = await createDatabase({ connectionString: '', dataDir: 'memory://', production: false });
@@ -91,6 +89,10 @@ test('HU10 API: valida campos, imágenes reales y límites antes de escribir', a
     { ...base, fotos: [] },
     { ...base, fotos: Array(6).fill(PNG) },
     { ...base, fotos: ['data:image/png;base64,QUJDRA=='] },
+    { ...base, fotos: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z5ZkAAAAASUVORK5CYII='] },
+    ...[PNG, WEBP, JPEG].map(photo => ({ ...base, fotos: [
+      photo.slice(0, photo.indexOf(',') + 1) + Buffer.from(photo.split(',')[1], 'base64').subarray(0, 18).toString('base64'),
+    ] })),
     { ...base, fotos: ['data:image/gif;base64,R0lGODlhAQABAIAAAAUEBA=='] },
     { ...base, fotos: [`data:image/png;base64,${large.toString('base64')}`] },
   ];

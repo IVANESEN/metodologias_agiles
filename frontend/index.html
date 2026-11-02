@@ -18,6 +18,7 @@
     <script src="/alertas.js" type="module"></script>
     <script src="/recepcion.js" type="module"></script>
     <script src="/entrega.js" type="module"></script>
+    <script src="/despacho.js" type="module"></script>
   </head>
   <body>
     <a class="skip-link" href="#catalogo" data-permission="maquinaria.consultar" hidden>Ir al catálogo</a>
@@ -116,6 +117,13 @@
                 <p class="form-error" id="entrega-error" role="alert" hidden></p>
                 <button class="primary-button" id="entrega-guardar" type="submit">Programar entrega</button>
               </form>
+              <div id="despacho" class="entrega" aria-labelledby="despacho-title">
+                <h4 id="despacho-title">Notificación al transportista</h4>
+                <p id="despacho-estado" role="status" aria-live="polite">Consulta el contrato para ver sus despachos.</p>
+                <p id="despacho-error" class="form-error" role="alert" hidden></p>
+                <button id="despacho-enviar" class="retry-button" type="button" data-permission="entregas.programar" hidden>Enviar orden de despacho</button>
+                <button id="despacho-actualizar" class="retry-button" type="button">Actualizar estado de envío</button>
+              </div>
             </section>
             <button class="primary-button" id="new-contract" type="button" data-permission="contratos.crear" hidden>Crear otro contrato <span aria-hidden="true">→</span></button>
           </section>

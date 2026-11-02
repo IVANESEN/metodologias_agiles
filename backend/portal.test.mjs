@@ -5,8 +5,7 @@ import { createDatabase, initializeDatabase } from './database.mjs';
 import { createServer } from './app.mjs';
 import { createUser } from './auth.mjs';
 import { hoyElSalvador } from './contratos-por-vencer.mjs';
-
-const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+import { PNG } from './test-fotografias.mjs';
 const CLAVE = 'Clave de prueba portal 2026';
 
 function shift(days) {
@@ -82,12 +81,18 @@ test('Portal multirrol: escenarios de cliente, proveedor, empleado y administrac
       body: { nombre: 'Ex', accion: 'publicar' } });
     assert.equal(incompleto.status, 400);
     assert.ok(incompleto.body.error.fields.descripcion && incompleto.body.error.fields.imagenes);
-    const creado = await call('/api/portal/productos/nuevo', { cookie: cookie.proveedor, method: 'POST', body: {
+    const product = {
       nombre: 'Excavadora Komatsu PC210', tipo: 'Excavadora', marca: 'Komatsu', modelo: 'PC210LC-11', anio: 2022,
       descripcion: 'Excavadora de 21 toneladas con cucharón de 1.2 m³, lista para obra civil.', condicion: 'USADO',
       modalidad: 'AMBAS', tarifa_diaria: '300', precio_venta: '135000', stock: 1, ubicacion: 'San Salvador',
       especificaciones: { Potencia: '165 hp' }, imagenes: [PNG], accion: 'publicar',
-    } });
+    };
+    const truncated = `data:image/png;base64,${Buffer.from(PNG.split(',')[1], 'base64').subarray(0, 40).toString('base64')}`;
+    const damaged = await call('/api/portal/productos/nuevo', { cookie: cookie.proveedor, method: 'POST',
+      body: { ...product, imagenes: [truncated] } });
+    assert.equal(damaged.status, 400, 'una cabecera PNG sin píxeles no es una fotografía válida');
+    assert.ok(damaged.body.error.fields.imagenes);
+    const creado = await call('/api/portal/productos/nuevo', { cookie: cookie.proveedor, method: 'POST', body: product });
     assert.equal(creado.status, 201);
     assert.equal(creado.body.estado_publicacion, 'PENDIENTE');
     assert.match(creado.body.imagenes[0], /^\/api\/portal\/imagenes\/\d+\/0$/);

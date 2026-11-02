@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 const APP_TABLES = [
   'maquinaria',
   'contrato',
@@ -13,8 +15,14 @@ const APP_TABLES = [
   'pedido_evento',
   'auditoria',
   'entrega_programada',
+  'recepcion_correccion',
+  'despacho_notificacion',
+  'despacho_intento',
 ];
 const API_ROLES = ['anon', 'authenticated', 'service_role'];
+const USER_ROLES = ['residente', 'gerente', 'admin', 'empleado', 'proveedor', 'cliente'];
+const ORDER_STATES = ['PENDIENTE', 'APROBADO', 'EN_ENTREGA', 'COMPLETADO', 'CANCELADO', 'RECHAZADO', 'FINALIZADO', 'DEVUELTO'];
+const REAJUSTES_TABLES = ['recepcion_correccion', 'despacho_notificacion', 'despacho_intento'];
 const INTERNAL_SCHEMAS = new Set(['auth', 'storage', 'realtime', '_realtime', 'extensions',
   'supabase_functions', 'supabase_migrations', 'vault', 'graphql', 'graphql_public',
   'pgsodium', 'pgsodium_masks', 'net', 'cron']);
@@ -90,6 +98,15 @@ const CURRENT_COLUMNS = {
     creado_en: 'timestamp with time zone',
     actualizado_en: 'timestamp with time zone',
   },
+  recepcion_correccion: { id: 'uuid', recepcion_id: 'uuid', version: 'integer', fotos: 'jsonb',
+    motivo: 'character varying(500)', usuario_id: 'uuid', creado_en: 'timestamp with time zone' },
+  despacho_notificacion: { id: 'character varying(64)', contrato_id: 'uuid', orden: 'jsonb',
+    estado: 'character varying(20)', intentos: 'integer', ultimo_error: 'character varying(250)',
+    proveedor_id: 'character varying(160)', usuario_id: 'uuid', creado_en: 'timestamp with time zone',
+    actualizado_en: 'timestamp with time zone' },
+  despacho_intento: { id: 'uuid', notificacion_id: 'character varying(64)', numero: 'integer',
+    estado: 'character varying(20)', error: 'character varying(250)', usuario_id: 'uuid',
+    creado_en: 'timestamp with time zone' },
 };
 // Relaciones obligatorias por tabla: [columna, tabla referenciada (id)].
 const FOREIGN_KEYS = {
@@ -100,6 +117,9 @@ const FOREIGN_KEYS = {
   pedido: [['cliente_id', 'usuario']], pedido_evento: [['pedido_id', 'pedido']],
   pedido_item: [['pedido_id', 'pedido'], ['maquinaria_id', 'maquinaria']],
   entrega_programada: [['contrato_id', 'contrato']],
+  recepcion_correccion: [['recepcion_id', 'recepcion_maquinaria'], ['usuario_id', 'usuario']],
+  despacho_notificacion: [['contrato_id', 'contrato'], ['usuario_id', 'usuario']],
+  despacho_intento: [['notificacion_id', 'despacho_notificacion'], ['usuario_id', 'usuario']],
 };
 
 export class PostgresPreparationError extends Error {
@@ -259,7 +279,8 @@ export async function inspectPostgresDatabase(database) {
   }
 }
 
-function checkInventory(inventory, schema, { current = false, existingReviewed = false } = {}) {
+function checkInventory(inventory, schema, { current = false, existingReviewed = false,
+  pendingReajustes = false } = {}) {
   if (inventory.visibleDataApiSchemas.includes(schema)) {
     fail('SCHEMA_EXPOSED_TO_DATA_API', 'El esquema de la aplicación está expuesto por la Data API. Retíralo de Exposed schemas antes de continuar.');
   }
@@ -314,6 +335,19 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         sameColumns(constraint.referenceColumns, ['id'])));
     if (!hasPrimaryKey || !hasForeignKeys) {
       fail('INCOMPATIBLE_EXISTING_TABLES', 'Faltan claves primarias o relaciones esperadas en las tablas existentes. Revisa el esquema antes de continuar.');
+    }
+    if (current && ['usuario', 'pedido'].includes(table.name)) {
+      const column = table.name === 'usuario' ? 'rol' : 'estado';
+      const expected = table.name === 'usuario' ? USER_ROLES : ORDER_STATES;
+      const supported = [expected];
+      if (pendingReajustes) supported.push(table.name === 'usuario'
+        ? ['residente', 'gerente'] : ORDER_STATES.filter(value => !['FINALIZADO', 'DEVUELTO'].includes(value)));
+      const allowedValues = table.constraints.some((constraint) => constraint.type === 'c' && constraint.validated &&
+        sameColumns(constraint.columns, [column]) &&
+        supported.some(values => [...constraint.definition.matchAll(/'([^']+)'/g)]
+          .map((match) => match[1]).sort().join(',') === [...values].sort().join(',')));
+      if (!allowedValues) fail('DATABASE_SCHEMA_NOT_READY',
+        'Falta ampliar los roles o estados operativos. Ejecuta la preparación revisada antes de iniciar esta versión.');
     }
     if (['usuario', 'sesion', 'token_recuperacion'].includes(table.name)) {
       const uniqueColumn = table.name === 'usuario' ? 'correo' : 'token_hash';
@@ -383,11 +417,40 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         fail('INCOMPATIBLE_EXISTING_TABLES', 'Las restricciones de entregas no coinciden con las esperadas. Revisa transportista, ventana horaria, fechas y relación contractual.');
       }
     }
+    if (['recepcion_correccion', 'despacho_notificacion', 'despacho_intento'].includes(table.name)) {
+      const optional = ['ultimo_error', 'proveedor_id', 'error'];
+      const required = Object.keys(CURRENT_COLUMNS[table.name]).filter((name) => !optional.includes(name));
+      const notNull = required.every((name) => table.columns.some((column) => column.name === name && column.notNull));
+      const restricted = foreignKeys.every(([column]) => table.constraints.some((constraint) =>
+        constraint.type === 'f' && constraint.validated && sameColumns(constraint.columns, [column]) && constraint.onDelete === 'r'));
+      const timestamps = required.filter((name) => name.endsWith('_en')).every((name) => table.columns.some((column) =>
+        column.name === name && normalizeExpression(column.defaultValue) === 'current_timestamp'));
+      const unique = table.name === 'despacho_notificacion' || table.constraints.some((constraint) => constraint.type === 'u' &&
+        sameColumns(constraint.columns, table.name === 'recepcion_correccion' ? ['recepcion_id', 'version'] : ['notificacion_id', 'numero']));
+      const check = (column, predicate) => table.constraints.some((constraint) => constraint.type === 'c' && constraint.validated &&
+        constraint.columns.includes(column) && predicate(normalizeExpression(constraint.definition), constraint.definition));
+      let validChecks;
+      if (table.name === 'recepcion_correccion') {
+        validChecks = check('version', (value) => value === 'checkversion>0') &&
+          check('fotos', (value) => value.includes("jsonb_typeoffotos='array'::text") &&
+            value.includes('jsonb_array_lengthfotos>=1') && value.includes('jsonb_array_lengthfotos<=5')) &&
+          check('motivo', (value) => /^checklengthb?trim(?:bothfrom)?motivo(?:::text)?>=10$/.test(value));
+      } else {
+        const states = table.name === 'despacho_notificacion' ? ['PENDIENTE', 'ENVIADO', 'FALLIDO'] : ['ENVIADO', 'FALLIDO'];
+        validChecks = check('estado', (_value, definition) => [...definition.matchAll(/'([^']+)'/g)]
+          .map((match) => match[1]).sort().join(',') === states.sort().join(',')) &&
+          (table.name === 'despacho_notificacion' ? check('intentos', (value) => value === 'checkintentos>=0') :
+            check('numero', (value) => value === 'checknumero>0'));
+      }
+      if (!notNull || !restricted || !timestamps || !unique || !validChecks) fail('INCOMPATIBLE_EXISTING_TABLES',
+        'Las restricciones de historial de evidencia o despacho no coinciden con las esperadas. Revisa versión, actor, estados y relaciones protegidas.');
+    }
     if (current && !table.rlsEnabled) {
       fail('DATABASE_PRIVACY_NOT_READY', 'Falta proteger las tablas del backend. Revisa la base e inicializa de forma explícita.');
     }
   }
-  if (current && existing.length !== APP_TABLES.length) {
+  if (current && APP_TABLES.some(name => !existing.some(table => table.name === name) &&
+      !(pendingReajustes && REAJUSTES_TABLES.includes(name)))) {
     fail('DATABASE_SCHEMA_NOT_READY', 'Faltan tablas o columnas de la aplicación. Ejecuta la inspección y db:init antes de iniciar PostgreSQL.');
   }
   return existing;
@@ -400,6 +463,61 @@ export async function assertPostgresReady(database) {
   return inventory;
 }
 
+function needsReajustes(inventory, schema) {
+  // Only the known fourteen-table release may be upgraded automatically. Existing
+  // new tables must already satisfy every constraint and privacy check as well.
+  checkInventory(inventory, schema, { current: true, pendingReajustes: true });
+  try {
+    checkInventory(inventory, schema, { current: true });
+    return false;
+  } catch (error) {
+    if (error instanceof PostgresPreparationError && error.code === 'DATABASE_SCHEMA_NOT_READY') return true;
+    throw error;
+  }
+}
+
+/** Release migration, run by npm prestart; never initializes a database or loads seeds. */
+export async function migratePostgresDatabase(database) {
+  const migration = '20261101_reajustes';
+  const schema = schemaFor(database);
+  try {
+    const verified = await database.verifyConnection();
+    const privateNetwork = database.renderInternal === true && verified?.privateNetwork === true;
+    if (!privateNetwork && (!verified?.tls?.encrypted || !verified.tls.authorized)) {
+      fail('DATABASE_TLS_NOT_VERIFIED', 'La migración requiere una conexión PostgreSQL con TLS verificado.');
+    }
+    const before = await inspectPostgresDatabase(database);
+    if (!needsReajustes(before, schema)) return { migration, applied: false, createdTables: [] };
+    // This registered SQL targets exactly the schema reviewed for this release.
+    // Other schema names still support explicit db:init/db:portal preparation.
+    if (schema !== 'constructora_private') fail('UNSUPPORTED_MIGRATION_SCHEMA',
+      'La migración automática 20261101 requiere constructora_private. Prepara otros esquemas de forma explícita.');
+    const sql = await readFile(new URL('../database/migrations/20261101_reajustes.sql', import.meta.url), 'utf8');
+    const wrapped = /^(?:\s|--[^\r\n]*(?:\r?\n|$))*BEGIN;\s*([\s\S]*?)\s*COMMIT;\s*$/i.exec(sql);
+    if (!wrapped) fail('INVALID_MIGRATION_SCRIPT', 'La migración registrada no tiene la transacción esperada. Revisa el archivo SQL.');
+    return await database.transaction(async tx => {
+      await tx.query("SELECT set_config('lock_timeout', '10s', true)");
+      await tx.query("SELECT set_config('statement_timeout', '60s', true)");
+      await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`constructora-init:${schema}`]);
+      const scoped = { ...tx, schema, requiresDataApiReview: database.requiresDataApiReview };
+      const locked = await inspectPostgresDatabase(scoped);
+      // A concurrent startup may have completed the migration while we waited.
+      if (!needsReajustes(locked, schema)) return { migration, applied: false, createdTables: [] };
+      // Strip only the outer BEGIN/COMMIT: post-validation must precede commit.
+      await tx.exec(wrapped[1]);
+      await assertPostgresReady(scoped);
+      return { migration, applied: true,
+        createdTables: REAJUSTES_TABLES.filter(name => !locked.appTables.some(table => table.name === name)) };
+    });
+  } catch (error) {
+    if (error instanceof PostgresPreparationError) throw error;
+    if (error?.code === '55P03' || error?.code === '57014') fail('DATABASE_MIGRATION_TIMEOUT',
+      'La migración agotó el límite de bloqueo o ejecución y se revirtió. Revisa las operaciones pendientes antes de reintentar.');
+    fail('DATABASE_MIGRATION_FAILED',
+      'No se pudo completar la migración 20261101. La transacción se revirtió; revisa el esquema y los permisos antes de reintentar.');
+  }
+}
+
 function validateScripts(schemaSql, seedsSql) {
   if (typeof schemaSql !== 'string' || typeof seedsSql !== 'string') {
     fail('INVALID_DATABASE_SCRIPTS', 'Los scripts de esquema y semillas deben ser texto SQL revisado.');
@@ -409,6 +527,19 @@ function validateScripts(schemaSql, seedsSql) {
       /\bON\s+CONFLICT\b[^;]*\bDO\s+UPDATE\b/i.test(sql) ||
       /\bALTER\s+TABLE\b[^;]*\b(?:DROP|RENAME|DISABLE|SET\s+SCHEMA|ALTER\s+COLUMN)\b/i.test(sql)) {
     fail('UNSAFE_DATABASE_SCRIPT', 'El script contiene operaciones que requieren revisión y autorización antes de ejecutarse.');
+  }
+}
+
+/** Only expands known application CHECKs, after the inventory has been reviewed.
+ * Executed in the same transaction as the additive schema, never at runtime startup.
+ * Old roles/states remain valid; historical rows are not rewritten.
+ */
+export async function applyCompatibilityConstraints(tx, schema) {
+  const prefix = schema ? `${quoteIdentifier(schema)}.` : '';
+  for (const [table, column, values] of [['usuario', 'rol', USER_ROLES], ['pedido', 'estado', ORDER_STATES]]) {
+    await tx.exec(`ALTER TABLE ${prefix}${table} DROP CONSTRAINT IF EXISTS ${table}_${column}_check;
+      ALTER TABLE ${prefix}${table} ADD CONSTRAINT ${table}_${column}_check
+        CHECK (${column} IN (${values.map((value) => `'${value}'`).join(', ')}));`);
   }
 }
 
@@ -435,6 +566,8 @@ export async function initializePostgresDatabase(database, {
   const before = await inspectPostgresDatabase(database);
   checkInventory(before, schema, { existingReviewed });
   return database.transaction(async (tx) => {
+    await tx.query("SELECT set_config('lock_timeout', '10s', true)");
+    await tx.query("SELECT set_config('statement_timeout', '60s', true)");
     await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`constructora-init:${schema}`]);
     const lockedInventory = await inspectPostgresDatabase({ ...tx, schema, requiresDataApiReview: database.requiresDataApiReview });
     const existing = checkInventory(lockedInventory, schema, { existingReviewed });
@@ -444,6 +577,7 @@ export async function initializePostgresDatabase(database, {
       REVOKE ALL ON SCHEMA ${quoteIdentifier(schema)} FROM ${grantees};`);
     await tx.query("SELECT set_config('search_path', $1, true)", [`${quoteIdentifier(schema)}, pg_catalog`]);
     await tx.exec(schemaSql);
+    await applyCompatibilityConstraints(tx, schema);
     for (const table of APP_TABLES) {
       await tx.exec(`ALTER TABLE ${quoteIdentifier(schema)}.${quoteIdentifier(table)} ENABLE ROW LEVEL SECURITY;
         REVOKE ALL ON TABLE ${quoteIdentifier(schema)}.${quoteIdentifier(table)} FROM ${grantees};`);

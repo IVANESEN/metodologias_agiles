@@ -69,8 +69,10 @@ desde un entorno privado ya configurado: ejecuta `npm run db:inspect`, revisa
 el inventario y prepara el esquema explícitamente con `db:init` cuando
 corresponda. Después ejecuta `npm run db:verify`; comprueba TLS, el esquema
 y las lecturas de `/api/health` y `/api/maquinaria` sin crear tablas ni datos.
-El servidor en producción comprueba el esquema al arrancar y no ejecuta
-migraciones automáticamente.
+`npm start` ejecuta primero `prestart` → `db:migrate`: aplica únicamente la
+migración registrada `20261101_reajustes` si encuentra la versión previa compatible
+de 14 tablas en `constructora_private`. Después el servidor comprueba el esquema.
+Las instalaciones vacías o esquemas incompatibles requieren preparación explícita.
 
 Cambiar `DATABASE_URL` no copia los datos de la base anterior. Editar `.env`
 o estos archivos tampoco modifica las variables reales de Render ni publica
@@ -119,3 +121,65 @@ el `commit` corresponde al despliegue restaurado.
 El rollback restaura la aplicación y conserva la base y sus datos. Con
 Auto-Deploy en **Off**, el siguiente despliegue lo realizará GitHub Actions
 cuando se integre una corrección en `main` y pasen las pruebas.
+
+## Actualizaciones del esquema y recuperación
+
+La instalación inicial continúa siendo explícita; PGlite local prepara su esquema.
+Para esta actualización, `npm start` ejecuta la migración registrada antes del
+servidor. Conservar una copia verificable antes de actualizar el entorno
+compartido: exportar mediante `pg_dump --format=custom` desde un entorno privado
+con las credenciales fuera del historial, y ensayar `pg_restore` en otra base.
+El respaldo debe incluir todas las tablas de la aplicación, permisos y la fecha
+y versión de origen. La existencia de un archivo sin restauración comprobada no
+demuestra que el respaldo sea recuperable.
+
+1. Restaurar una copia en una base de prueba; usar su conexión privada y revisar
+   `npm run db:inspect`, conteos, restricciones y permisos. No usar producción
+   para el ensayo.
+2. Desde la versión candidata ejecutar `npm run db:migrate`. Solo aplica
+   `database/migrations/20261101_reajustes.sql`: conserva roles y estados anteriores,
+   amplía los CHECK y crea las tres tablas de correcciones y despacho con RLS y
+   permisos revocados. No carga semillas ni actualiza usuarios, contratos, pagos o
+   fotografías. La validación final ocurre dentro de la transacción; un fallo
+   revierte todos los cambios. `db:init` y `db:portal` siguen disponibles para una
+   preparación explícita distinta; no son el mecanismo automático de esta versión.
+3. La preparación serializa con un bloqueo asesor, limita espera de bloqueos a
+   10 segundos y sentencias a 60 segundos. Si vence un límite, conservar el error,
+   revisar la transacción que bloquea y repetir el mismo comando tras resolverlo.
+   No quitar restricciones ni interrumpir sesiones ajenas para forzar el cambio.
+4. Ejecutar `npm run db:verify`. Después reiniciar la aplicación candidata y
+   comprobar `/api/health`, catálogo, contratos, evidencias y programación. Repetir
+   la preparación no debe duplicar registros ni cambiar importes históricos.
+5. Al fusionar el PR a `main`, GitHub Actions comprueba dependencias, sintaxis y
+   pruebas y solicita el despliegue del mismo commit. Render conserva
+   `startCommand: npm start`; `prestart` usa la conexión privada del servicio y
+   prepara la base antes de abrir el puerto. Un error devuelve código distinto de
+   cero e impide iniciar la nueva versión. Con el esquema actualizado, los
+   siguientes arranques omiten DDL. No se necesitan secretos de Supabase en Actions
+   ni cambios de variables o de plan en Render. Ejecutar directamente
+   `node backend/server.mjs` omite `prestart`: usar `npm start` en producción.
+
+La expansión añade tablas/columnas y conserva los valores de roles y estados
+anteriores. El código anterior al ajuste puede leer las columnas antiguas,
+pero su inventario estricto rechaza tablas nuevas y sus reglas de disponibilidad
+no conocen los estados `FINALIZADO` y `DEVUELTO`. Por ello no se garantiza un
+rollback de aplicación a una versión anterior sin probarla contra el esquema
+expandido. Mantener en revisión una versión de recuperación que acepte ese
+esquema y conserve el bloqueo de rentas. Durante la transición, detener escrituras
+o restringir a un solo grupo de servidores ya actualizado; no mezclar escritores
+con reglas viejas y nuevas.
+
+Si la migración falla antes del commit, la transacción revierte DDL y datos
+insertados; comprobar inventario y ejecutar de nuevo tras corregir la causa.
+Si falla la aplicación después del commit, conservar el esquema expandido y
+recuperar con una corrección compatible. No eliminar tablas o columnas ni reducir
+los CHECK si ya se registraron nuevos estados. Restaurar un respaldo solo es
+último recurso: hacerlo primero en otra base, reconciliar las escrituras posteriores
+al respaldo y coordinar el cambio con el equipo. La restauración puede perder
+operaciones posteriores y exige una ventana acordada. Render Rollback no restaura
+la base de datos.
+
+Las pruebas `postgres-preparation.test.mjs`, `preparar-portal.test.mjs` y
+`migration-recovery.test.mjs` ejecutan SQL en PGlite aislado, con evidencia TLS
+simulada. Cubren actualización de datos históricos, reintento, reapertura y fallo
+inyectado; no acreditan TLS real, respaldo operativo ni recuperación de Supabase.

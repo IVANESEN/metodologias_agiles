@@ -4,11 +4,15 @@ import { readFile, stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mjs';
-import { buildContractPdf } from './contrato-pdf.mjs';
+import { buildContractPdf, textoContratoCompatible, mensajeTextoContrato } from './contrato-pdf.mjs';
+import { validarFotografia } from './imagenes.mjs';
+import { rentalEligibility, rentalEligibilitySql, occupiedRanges, overlappingMachine, unoccupiedSql } from './alquiler-reglas.mjs';
+import { corregirEvidencia, historialEvidencia } from './recepcion-correcciones.mjs';
+import { enviarDespacho, consultarDespachos } from './despacho.mjs';
 import { hoyElSalvador, validarDias, buscarPorVencer } from './contratos-por-vencer.mjs';
 import { validarEntrega, guardarEntrega, consultarEntrega } from './entregas.mjs';
 import { normalizeSignature } from '../frontend/firma-datos.mjs';
-import { AuthError, handleAuthRoutes, guardSession, guardPermission, checkRequestOrigin } from './auth.mjs';
+import { AuthError, handleAuthRoutes, guardSession, guardPermission, checkRequestOrigin, currentUser } from './auth.mjs';
 import { handleRecoveryRoutes } from './recuperacion.mjs';
 import { resolverRutaProtegida } from './permisos.mjs';
 import { handlePortalRoute, handleRegistrationRoute } from './portal.mjs';
@@ -124,7 +128,7 @@ export function validateMachineryFilters(searchParams) {
 
 export async function findMachinery(database, filters) {
   // Los contratos de obra solo usan equipos publicados que admiten renta.
-  const conditions = ["m.estado_publicacion = 'ACTIVO'", "m.modalidad <> 'VENTA'"];
+  const conditions = [rentalEligibilitySql('m', { includeAvailability: false })];
   const values = [];
   const parameter = (value) => { values.push(value); return `$${values.length}`; };
   if (filters.disponible !== undefined) {
@@ -137,15 +141,7 @@ export async function findMachinery(database, filters) {
   if (filters.fecha_inicio) {
     const start = parameter(filters.fecha_inicio);
     const end = parameter(filters.fecha_fin);
-    conditions.push(`NOT EXISTS (
-      SELECT 1 FROM contrato_maquinaria cm JOIN contrato c ON c.id = cm.contrato_id
-      WHERE cm.maquinaria_id = m.id AND c.estado = 'CONFIRMADO'
-      AND c.fecha_inicio <= ${end}::date AND c.fecha_fin >= ${start}::date
-    )`, `NOT EXISTS (
-      SELECT 1 FROM pedido_item pi JOIN pedido p ON p.id = pi.pedido_id
-      WHERE pi.maquinaria_id = m.id AND pi.modalidad = 'RENTA' AND p.estado IN ('PENDIENTE', 'APROBADO', 'EN_ENTREGA')
-      AND pi.fecha_inicio <= ${end}::date AND pi.fecha_fin >= ${start}::date
-    )`);
+    conditions.push(unoccupiedSql('m', start, end));
   }
   const { rows } = await database.query(
     `SELECT m.id, m.nombre, m.tipo, m.descripcion, m.tarifa_diaria, m.disponible, m.ubicacion, m.horometro, m.ficha_tecnica, m.foto_url
@@ -170,16 +166,16 @@ export function validateContract(body) {
     new Set(ids).size !== ids.length) {
     fields[hasSingle ? 'maquinaria_id' : 'maquinaria_ids'] = 'Selecciona una o más maquinarias válidas, sin repetirlas.';
   }
-  const cliente = typeof body.cliente === 'string' ? body.cliente.trim() : '';
+  const cliente = typeof body.cliente === 'string' ? body.cliente.trim().normalize('NFC') : '';
   if (cliente.length < 2 || cliente.length > 160 || /[\u0000-\u001f\u007f]/.test(cliente)) {
     fields.cliente = 'Escribe el nombre del cliente (2 a 160 caracteres).';
   }
-  const ciudad = typeof body.ciudad === 'string' ? body.ciudad.trim() : '';
+  const ciudad = typeof body.ciudad === 'string' ? body.ciudad.trim().normalize('NFC') : '';
   if (ciudad.length < 2 || ciudad.length > 100 || /[\u0000-\u001f\u007f]/.test(ciudad)) {
     fields.ciudad = 'Escribe la ciudad de la obra (2 a 100 caracteres).';
   }
   const REQUIRED = 'Este campo es obligatorio.';
-  const text = (value) => (typeof value === 'string' ? value.trim() : '');
+  const text = (value) => (typeof value === 'string' ? value.trim().normalize('NFC') : '');
   const operador = text(body.operador);
   if (!operador) fields.operador = REQUIRED;
   else if (operador.length < 2 || operador.length > 160 || /[\u0000-\u001f\u007f]/.test(operador)) {
@@ -198,6 +194,9 @@ export function validateContract(body) {
   const condiciones_especiales = text(body.condiciones_especiales);
   if (condiciones_especiales.length > 1000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(condiciones_especiales)) {
     fields.condiciones_especiales = 'Usa un máximo de 1000 caracteres.';
+  }
+  for (const [name, value] of Object.entries({ cliente, ciudad, operador, condiciones_especiales })) {
+    if (!textoContratoCompatible(value)) fields[name] = mensajeTextoContrato;
   }
   for (const name of ['cliente', 'ciudad', 'fecha_inicio', 'fecha_fin']) {
     if (body[name] === undefined || body[name] === null || text(body[name]) === '') fields[name] = REQUIRED;
@@ -281,21 +280,7 @@ export function validatePayment(body) {
   return { id: body.id?.toLowerCase() || randomUUID(), monto: `${Number(whole)}.${decimals.padEnd(2, '0')}` };
 }
 
-function validImageSignature(type, bytes) {
-  if (type === 'jpeg') {
-    return bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff &&
-      bytes.at(-2) === 0xff && bytes.at(-1) === 0xd9;
-  }
-  if (type === 'png') {
-    return bytes.length >= 33 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
-      bytes.subarray(12, 16).toString('ascii') === 'IHDR';
-  }
-  return type === 'webp' && bytes.length >= 16 && bytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
-    bytes.subarray(8, 12).toString('ascii') === 'WEBP' &&
-    ['VP8 ', 'VP8L', 'VP8X'].includes(bytes.subarray(12, 16).toString('ascii'));
-}
-
-export function validateReception(body) {
+export async function validateReception(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'Revisa los datos de la recepción.');
   }
@@ -319,23 +304,11 @@ export function validateReception(body) {
     fields.fotos = 'Adjunta entre 1 y 5 fotografías.';
   } else {
     for (const photo of body.fotos) {
-      const match = typeof photo === 'string'
-        ? /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(photo) : null;
-      if (!match || match[2].length % 4 !== 0) {
-        fields.fotos = 'Las evidencias deben ser fotografías JPEG, PNG o WebP válidas.';
-        break;
-      }
-      const bytes = Buffer.from(match[2], 'base64');
-      if (bytes.toString('base64') !== match[2] || !validImageSignature(match[1], bytes)) {
-        fields.fotos = 'El contenido de una fotografía no coincide con su formato.';
-        break;
-      }
-      if (bytes.length > MAX_RECEPTION_PHOTO_BYTES) {
-        fields.fotos = 'Cada fotografía debe ocupar como máximo 1 MB después de optimizarse.';
-        break;
-      }
-      totalBytes += bytes.length;
-      photos.push(`data:image/${match[1]};base64,${match[2]}`);
+      try {
+        const decoded = await validarFotografia(photo, { maxBytes: MAX_RECEPTION_PHOTO_BYTES });
+        totalBytes += decoded.bytes;
+        photos.push(decoded.dataUrl);
+      } catch (error) { fields.fotos = error.message; break; }
     }
     if (!fields.fotos && totalBytes > MAX_RECEPTION_TOTAL_PHOTO_BYTES) {
       fields.fotos = 'Las fotografías superan el límite total de 5 MB.';
@@ -405,7 +378,8 @@ export async function findReceptions(database, contractId) {
   const contract = await database.query('SELECT id FROM contrato WHERE id = $1', [contractId]);
   if (!contract.rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
   const { rows } = await database.query(
-    `SELECT r.id, r.contrato_id, r.maquinaria_id, cm.maquinaria_nombre, r.horometro, r.fotos,
+    `SELECT r.id, r.contrato_id, r.maquinaria_id, cm.maquinaria_nombre, r.horometro,
+       COALESCE((SELECT rc.fotos FROM recepcion_correccion rc WHERE rc.recepcion_id = r.id ORDER BY rc.version DESC LIMIT 1), r.fotos) AS fotos,
        r.fecha_recepcion::text FROM recepcion_maquinaria r JOIN contrato_maquinaria cm
        ON cm.contrato_id = r.contrato_id AND cm.maquinaria_id = r.maquinaria_id
      WHERE r.contrato_id = $1 ORDER BY r.fecha_recepcion DESC, r.id`, [contractId],
@@ -452,7 +426,7 @@ export async function saveContract(database, input) {
     // All writers lock every selected machine in the same order. Shared machines
     // serialize concurrent rentals without cycles between multi-machine writers.
     const machineResult = await tx.query(
-      `SELECT id, nombre, tarifa_diaria, disponible FROM maquinaria
+      `SELECT id, nombre, tarifa_diaria, disponible, modalidad, estado_publicacion FROM maquinaria
        WHERE id = ANY($1::integer[]) ORDER BY id FOR UPDATE`,
       [input.maquinaria_ids],
     );
@@ -460,26 +434,15 @@ export async function saveContract(database, input) {
     if (machines.length !== input.maquinaria_ids.length) {
       throw new ApiError(404, 'MACHINERY_NOT_FOUND', 'Una de las maquinarias seleccionadas no existe.');
     }
-    const inactive = machines.find((machine) => !machine.disponible);
+    const inactive = machines.find((machine) => !rentalEligibility(machine));
     if (inactive) {
       throw new ApiError(409, 'MACHINERY_UNAVAILABLE', `${inactive.nombre} no está disponible para alquiler.`);
     }
-    // Las reservas del portal (pedidos de renta activos) también ocupan el equipo.
-    const overlap = await tx.query(
-      `SELECT maquinaria_id FROM (
-         SELECT cm.maquinaria_id FROM contrato_maquinaria cm JOIN contrato c ON c.id = cm.contrato_id
-         WHERE cm.maquinaria_id = ANY($1::integer[]) AND c.estado = 'CONFIRMADO'
-         AND c.fecha_inicio <= $3::date AND c.fecha_fin >= $2::date
-         UNION ALL
-         SELECT pi.maquinaria_id FROM pedido_item pi JOIN pedido p ON p.id = pi.pedido_id
-         WHERE pi.maquinaria_id = ANY($1::integer[]) AND pi.modalidad = 'RENTA'
-         AND p.estado IN ('PENDIENTE', 'APROBADO', 'EN_ENTREGA')
-         AND pi.fecha_inicio <= $3::date AND pi.fecha_fin >= $2::date
-       ) ocupadas ORDER BY maquinaria_id LIMIT 1`,
-      [input.maquinaria_ids, input.fecha_inicio, input.fecha_fin],
-    );
-    if (overlap.rows.length) {
-      const busy = machines.find((machine) => machine.id === overlap.rows[0].maquinaria_id);
+    const unsupported = machines.find((machine) => !textoContratoCompatible(machine.nombre));
+    if (unsupported) throw new ApiError(409, 'UNSUPPORTED_PDF_TEXT', mensajeTextoContrato, { maquinaria_ids: unsupported.nombre });
+    const overlap = await overlappingMachine(tx, input.maquinaria_ids, input.fecha_inicio, input.fecha_fin);
+    if (overlap) {
+      const busy = machines.find((machine) => machine.id === overlap.maquinaria_id);
       throw new ApiError(409, 'DATE_CONFLICT', `${busy.nombre} ya tiene un contrato en esas fechas. Selecciona otro período.`);
     }
     // PostgreSQL sums numeric tariffs exactly; client totals never set the price.
@@ -564,7 +527,7 @@ async function serveFile(request, response, pathname, frontendDir) {
 }
 
 export function createServer({ database, frontendDir = defaultFrontendDir, logger = console,
-  requireAuth = false, mailer, appUrl = process.env.APP_URL,
+  requireAuth = false, mailer, dispatchAdapter, appUrl = process.env.APP_URL,
   secureCookies = process.env.NODE_ENV === 'production' } = {}) {
   if (!database) throw new TypeError('createServer requires a database adapter.');
   const server = createHttpServer(async (request, response) => {
@@ -615,19 +578,12 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
         if (!Number.isInteger(id) || id < 1 || id > 2147483647) {
           throw new ApiError(400, 'VALIDATION_ERROR', 'Selecciona una maquinaria válida.');
         }
-        const { rows } = await database.query(
-          `SELECT c.fecha_inicio::text, c.fecha_fin::text
-           FROM contrato c
-           JOIN contrato_maquinaria cm ON cm.contrato_id = c.id
-           WHERE cm.maquinaria_id = $1 AND c.estado = 'CONFIRMADO'
-           ORDER BY c.fecha_inicio`,
-          [id],
-        );
-        return json(response, 200, rows);
+        return json(response, 200, (await occupiedRanges(database, id))
+          .map(({ fecha_inicio, fecha_fin }) => ({ fecha_inicio, fecha_fin })));
       }
       if (ruta?.operacion === 'recepciones.crear') {
         const { replayed, recepcion } = await saveReception(database,
-          validateReception(await readJson(request, MAX_RECEPTION_BODY_BYTES)));
+          await validateReception(await readJson(request, MAX_RECEPTION_BODY_BYTES)));
         response.setHeader('Location', `/api/contratos/${recepcion.contrato_id}/recepciones`);
         return json(response, replayed ? 200 : 201, recepcion);
       }
@@ -637,6 +593,19 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
           throw new ApiError(400, 'INVALID_ID', 'El identificador del contrato no es válido.');
         }
         return json(response, 200, { recepciones: await findReceptions(database, contractId.toLowerCase()) });
+      }
+      if (['recepciones.corregir', 'recepciones.historial', 'despachos.enviar', 'despachos.consultar'].includes(ruta?.operacion)) {
+        const [id] = ruta.parametros;
+        if (!UUID_PATTERN.test(id)) throw new ApiError(400, 'INVALID_ID', 'El identificador no es válido.');
+        // Las nuevas operaciones trazables siempre exigen un actor autenticado,
+        // incluso en servidores de pruebas que omiten el guard global.
+        const user = authContext.user || await currentUser(database, request);
+        guardPermission({ user }, ruta.permiso);
+        if (ruta.operacion === 'recepciones.historial') return json(response, 200, await historialEvidencia(database, id));
+        if (ruta.operacion === 'recepciones.corregir') return json(response, 200,
+          await corregirEvidencia(database, id, await readJson(request, MAX_RECEPTION_BODY_BYTES), user));
+        if (ruta.operacion === 'despachos.consultar') return json(response, 200, await consultarDespachos(database, id));
+        return json(response, 200, await enviarDespacho(database, id, await readJson(request), user, dispatchAdapter));
       }
       // HU9a: "hoy" se calcula en El Salvador, no con la fecha UTC del servidor.
       if (ruta?.operacion === 'entregas.programar') {
@@ -723,6 +692,9 @@ export function createServer({ database, frontendDir = defaultFrontendDir, logge
       await serveFile(request, response, path, frontendDir);
     } catch (error) {
       if (response.headersSent || response.destroyed) return;
+      if (error.code === 'UNSUPPORTED_PDF_TEXT') {
+        return json(response, 409, { error: { code: error.code, message: mensajeTextoContrato } });
+      }
       if (error instanceof ApiError || error instanceof AuthError) {
         return json(response, error.status, {
           error: { code: error.code, message: error.message, ...(error.fields ? { fields: error.fields } : {}) },

@@ -165,7 +165,10 @@ if (await sessionReady && hasPermission('entregas.consultar')) {
           method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ contrato_id: id, ...datos }),
         }));
-        if (contrato?.id === id) pintar(respuesta);
+        if (contrato?.id === id) {
+          pintar(respuesta);
+          window.dispatchEvent(new CustomEvent('entrega-actualizada', { detail: { id } }));
+        }
       } catch (error) {
         // Los errores sin campo propio (contrato o restricción de la base) van al mensaje general.
         const mensaje = error instanceof TypeError

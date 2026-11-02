@@ -3,7 +3,8 @@ import { api, esc, money, badge, date, dateTime, relative, toast, empty, modal, 
 import { steps } from './inicio.js';
 
 const FILTERS = [['', 'Todos'], ['PENDIENTE', 'Pendientes'], ['APROBADO', 'Aprobados'], ['EN_ENTREGA', 'En entrega'],
-  ['COMPLETADO', 'Completados'], ['CANCELADO', 'Cancelados'], ['RECHAZADO', 'Rechazados']];
+  ['COMPLETADO', 'Entregados'], ['FINALIZADO', 'Renta finalizada'], ['DEVUELTO', 'Devueltos'],
+  ['CANCELADO', 'Cancelados'], ['RECHAZADO', 'Rechazados']];
 const TIPO = { COMPRA: ['package', 'Compra'], RENTA: ['calendar', 'Renta'], MIXTO: ['layers', 'Renta y compra'] };
 
 export async function ordersList(ctx) {
@@ -74,12 +75,15 @@ const ACTIONS = {
   APROBADO: { label: 'Aprobar pedido', ico: 'check', className: '' },
   EN_ENTREGA: { label: 'Marcar en entrega', ico: 'truck', className: 'btn-celeste' },
   COMPLETADO: { label: 'Confirmar entrega', ico: 'checkCircle', className: '' },
+  FINALIZADO: { label: 'Finalizar renta', ico: 'calendar', className: '' },
+  DEVUELTO: { label: 'Registrar devolución', ico: 'checkCircle', className: '' },
   RECHAZADO: { label: 'Rechazar', ico: 'xCircle', className: 'btn-danger', note: true },
   CANCELADO: { label: 'Cancelar', ico: 'x', className: 'btn-danger', note: true },
 };
 
 function eventIcon(estado) {
-  return { PENDIENTE: 'clipboard', APROBADO: 'check', EN_ENTREGA: 'truck', COMPLETADO: 'checkCircle', CANCELADO: 'x', RECHAZADO: 'xCircle' }[estado] || 'info';
+  return { PENDIENTE: 'clipboard', APROBADO: 'check', EN_ENTREGA: 'truck', COMPLETADO: 'checkCircle',
+    FINALIZADO: 'calendar', DEVUELTO: 'checkCircle', CANCELADO: 'x', RECHAZADO: 'xCircle' }[estado] || 'info';
 }
 
 export async function orderDetail(ctx, [id]) {

@@ -13,8 +13,13 @@ const APP_TABLES = [
   'pedido_evento',
   'auditoria',
   'entrega_programada',
+  'recepcion_correccion',
+  'despacho_notificacion',
+  'despacho_intento',
 ];
 const API_ROLES = ['anon', 'authenticated', 'service_role'];
+const USER_ROLES = ['residente', 'gerente', 'admin', 'empleado', 'proveedor', 'cliente'];
+const ORDER_STATES = ['PENDIENTE', 'APROBADO', 'EN_ENTREGA', 'COMPLETADO', 'CANCELADO', 'RECHAZADO', 'FINALIZADO', 'DEVUELTO'];
 const INTERNAL_SCHEMAS = new Set(['auth', 'storage', 'realtime', '_realtime', 'extensions',
   'supabase_functions', 'supabase_migrations', 'vault', 'graphql', 'graphql_public',
   'pgsodium', 'pgsodium_masks', 'net', 'cron']);
@@ -90,6 +95,15 @@ const CURRENT_COLUMNS = {
     creado_en: 'timestamp with time zone',
     actualizado_en: 'timestamp with time zone',
   },
+  recepcion_correccion: { id: 'uuid', recepcion_id: 'uuid', version: 'integer', fotos: 'jsonb',
+    motivo: 'character varying(500)', usuario_id: 'uuid', creado_en: 'timestamp with time zone' },
+  despacho_notificacion: { id: 'character varying(64)', contrato_id: 'uuid', orden: 'jsonb',
+    estado: 'character varying(20)', intentos: 'integer', ultimo_error: 'character varying(250)',
+    proveedor_id: 'character varying(160)', usuario_id: 'uuid', creado_en: 'timestamp with time zone',
+    actualizado_en: 'timestamp with time zone' },
+  despacho_intento: { id: 'uuid', notificacion_id: 'character varying(64)', numero: 'integer',
+    estado: 'character varying(20)', error: 'character varying(250)', usuario_id: 'uuid',
+    creado_en: 'timestamp with time zone' },
 };
 // Relaciones obligatorias por tabla: [columna, tabla referenciada (id)].
 const FOREIGN_KEYS = {
@@ -100,6 +114,9 @@ const FOREIGN_KEYS = {
   pedido: [['cliente_id', 'usuario']], pedido_evento: [['pedido_id', 'pedido']],
   pedido_item: [['pedido_id', 'pedido'], ['maquinaria_id', 'maquinaria']],
   entrega_programada: [['contrato_id', 'contrato']],
+  recepcion_correccion: [['recepcion_id', 'recepcion_maquinaria'], ['usuario_id', 'usuario']],
+  despacho_notificacion: [['contrato_id', 'contrato'], ['usuario_id', 'usuario']],
+  despacho_intento: [['notificacion_id', 'despacho_notificacion'], ['usuario_id', 'usuario']],
 };
 
 export class PostgresPreparationError extends Error {
@@ -315,6 +332,15 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
     if (!hasPrimaryKey || !hasForeignKeys) {
       fail('INCOMPATIBLE_EXISTING_TABLES', 'Faltan claves primarias o relaciones esperadas en las tablas existentes. Revisa el esquema antes de continuar.');
     }
+    if (current && ['usuario', 'pedido'].includes(table.name)) {
+      const column = table.name === 'usuario' ? 'rol' : 'estado';
+      const expected = table.name === 'usuario' ? USER_ROLES : ORDER_STATES;
+      const allowedValues = table.constraints.some((constraint) => constraint.type === 'c' && constraint.validated &&
+        sameColumns(constraint.columns, [column]) &&
+        [...constraint.definition.matchAll(/'([^']+)'/g)].map((match) => match[1]).sort().join(',') === [...expected].sort().join(','));
+      if (!allowedValues) fail('DATABASE_SCHEMA_NOT_READY',
+        'Falta ampliar los roles o estados operativos. Ejecuta la preparación revisada antes de iniciar esta versión.');
+    }
     if (['usuario', 'sesion', 'token_recuperacion'].includes(table.name)) {
       const uniqueColumn = table.name === 'usuario' ? 'correo' : 'token_hash';
       const optional = ['usado_en', 'telefono', 'empresa', 'documento', 'ultimo_acceso'];
@@ -383,6 +409,34 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         fail('INCOMPATIBLE_EXISTING_TABLES', 'Las restricciones de entregas no coinciden con las esperadas. Revisa transportista, ventana horaria, fechas y relación contractual.');
       }
     }
+    if (['recepcion_correccion', 'despacho_notificacion', 'despacho_intento'].includes(table.name)) {
+      const optional = ['ultimo_error', 'proveedor_id', 'error'];
+      const required = Object.keys(CURRENT_COLUMNS[table.name]).filter((name) => !optional.includes(name));
+      const notNull = required.every((name) => table.columns.some((column) => column.name === name && column.notNull));
+      const restricted = foreignKeys.every(([column]) => table.constraints.some((constraint) =>
+        constraint.type === 'f' && constraint.validated && sameColumns(constraint.columns, [column]) && constraint.onDelete === 'r'));
+      const timestamps = required.filter((name) => name.endsWith('_en')).every((name) => table.columns.some((column) =>
+        column.name === name && normalizeExpression(column.defaultValue) === 'current_timestamp'));
+      const unique = table.name === 'despacho_notificacion' || table.constraints.some((constraint) => constraint.type === 'u' &&
+        sameColumns(constraint.columns, table.name === 'recepcion_correccion' ? ['recepcion_id', 'version'] : ['notificacion_id', 'numero']));
+      const check = (column, predicate) => table.constraints.some((constraint) => constraint.type === 'c' && constraint.validated &&
+        constraint.columns.includes(column) && predicate(normalizeExpression(constraint.definition), constraint.definition));
+      let validChecks;
+      if (table.name === 'recepcion_correccion') {
+        validChecks = check('version', (value) => value === 'checkversion>0') &&
+          check('fotos', (value) => value.includes("jsonb_typeoffotos='array'::text") &&
+            value.includes('jsonb_array_lengthfotos>=1') && value.includes('jsonb_array_lengthfotos<=5')) &&
+          check('motivo', (value) => /^checklengthb?trim(?:bothfrom)?motivo(?:::text)?>=10$/.test(value));
+      } else {
+        const states = table.name === 'despacho_notificacion' ? ['PENDIENTE', 'ENVIADO', 'FALLIDO'] : ['ENVIADO', 'FALLIDO'];
+        validChecks = check('estado', (_value, definition) => [...definition.matchAll(/'([^']+)'/g)]
+          .map((match) => match[1]).sort().join(',') === states.sort().join(',')) &&
+          (table.name === 'despacho_notificacion' ? check('intentos', (value) => value === 'checkintentos>=0') :
+            check('numero', (value) => value === 'checknumero>0'));
+      }
+      if (!notNull || !restricted || !timestamps || !unique || !validChecks) fail('INCOMPATIBLE_EXISTING_TABLES',
+        'Las restricciones de historial de evidencia o despacho no coinciden con las esperadas. Revisa versión, actor, estados y relaciones protegidas.');
+    }
     if (current && !table.rlsEnabled) {
       fail('DATABASE_PRIVACY_NOT_READY', 'Falta proteger las tablas del backend. Revisa la base e inicializa de forma explícita.');
     }
@@ -412,6 +466,19 @@ function validateScripts(schemaSql, seedsSql) {
   }
 }
 
+/** Only expands known application CHECKs, after the inventory has been reviewed.
+ * Executed in the same transaction as the additive schema, never at runtime startup.
+ * Old roles/states remain valid; historical rows are not rewritten.
+ */
+export async function applyCompatibilityConstraints(tx, schema) {
+  const prefix = schema ? `${quoteIdentifier(schema)}.` : '';
+  for (const [table, column, values] of [['usuario', 'rol', USER_ROLES], ['pedido', 'estado', ORDER_STATES]]) {
+    await tx.exec(`ALTER TABLE ${prefix}${table} DROP CONSTRAINT IF EXISTS ${table}_${column}_check;
+      ALTER TABLE ${prefix}${table} ADD CONSTRAINT ${table}_${column}_check
+        CHECK (${column} IN (${values.map((value) => `'${value}'`).join(', ')}));`);
+  }
+}
+
 /** Explicit preparation: inspect first, refuse ambiguity, retain existing rows. */
 export async function initializePostgresDatabase(database, {
   schemaSql, seedsSql, existingReviewed = false,
@@ -435,6 +502,8 @@ export async function initializePostgresDatabase(database, {
   const before = await inspectPostgresDatabase(database);
   checkInventory(before, schema, { existingReviewed });
   return database.transaction(async (tx) => {
+    await tx.query("SELECT set_config('lock_timeout', '10s', true)");
+    await tx.query("SELECT set_config('statement_timeout', '60s', true)");
     await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`constructora-init:${schema}`]);
     const lockedInventory = await inspectPostgresDatabase({ ...tx, schema, requiresDataApiReview: database.requiresDataApiReview });
     const existing = checkInventory(lockedInventory, schema, { existingReviewed });
@@ -444,6 +513,7 @@ export async function initializePostgresDatabase(database, {
       REVOKE ALL ON SCHEMA ${quoteIdentifier(schema)} FROM ${grantees};`);
     await tx.query("SELECT set_config('search_path', $1, true)", [`${quoteIdentifier(schema)}, pg_catalog`]);
     await tx.exec(schemaSql);
+    await applyCompatibilityConstraints(tx, schema);
     for (const table of APP_TABLES) {
       await tx.exec(`ALTER TABLE ${quoteIdentifier(schema)}.${quoteIdentifier(table)} ENABLE ROW LEVEL SECURITY;
         REVOKE ALL ON TABLE ${quoteIdentifier(schema)}.${quoteIdentifier(table)} FROM ${grantees};`);

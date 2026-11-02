@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS pedido (
   cliente_id UUID NOT NULL REFERENCES usuario(id) ON DELETE RESTRICT,
   tipo VARCHAR(10) NOT NULL CHECK (tipo IN ('COMPRA', 'RENTA', 'MIXTO')),
   estado VARCHAR(14) NOT NULL DEFAULT 'PENDIENTE'
-    CHECK (estado IN ('PENDIENTE', 'APROBADO', 'EN_ENTREGA', 'COMPLETADO', 'CANCELADO', 'RECHAZADO')),
+    CHECK (estado IN ('PENDIENTE', 'APROBADO', 'EN_ENTREGA', 'COMPLETADO', 'CANCELADO', 'RECHAZADO', 'FINALIZADO', 'DEVUELTO')),
   ciudad VARCHAR(100) NOT NULL CHECK (length(trim(ciudad)) >= 2),
   direccion VARCHAR(240) NOT NULL CHECK (length(trim(direccion)) >= 5),
   metodo_pago VARCHAR(30) NOT NULL CHECK (metodo_pago IN ('EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'CREDITO_30_DIAS')),
@@ -278,4 +278,42 @@ CREATE TABLE IF NOT EXISTS entrega_programada (
   actualizado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT entrega_programada_transportista_check CHECK (length(trim(transportista)) >= 2),
   CONSTRAINT entrega_programada_ventana_check CHECK (hora_hasta > hora_desde)
+);
+
+-- H01: correcciones de evidencia sin sobrescribir las fotografías originales.
+CREATE TABLE IF NOT EXISTS recepcion_correccion (
+  id UUID PRIMARY KEY,
+  recepcion_id UUID NOT NULL REFERENCES recepcion_maquinaria(id) ON DELETE RESTRICT,
+  version INTEGER NOT NULL CHECK (version > 0),
+  fotos JSONB NOT NULL CHECK (jsonb_typeof(fotos) = 'array' AND jsonb_array_length(fotos) BETWEEN 1 AND 5),
+  motivo VARCHAR(500) NOT NULL CHECK (length(trim(motivo)) >= 10),
+  usuario_id UUID NOT NULL REFERENCES usuario(id) ON DELETE RESTRICT,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (recepcion_id, version)
+);
+
+-- H09: orden congelada por programación e historial de intentos verificables.
+CREATE TABLE IF NOT EXISTS despacho_notificacion (
+  id VARCHAR(64) PRIMARY KEY,
+  contrato_id UUID NOT NULL REFERENCES contrato(id) ON DELETE RESTRICT,
+  orden JSONB NOT NULL,
+  estado VARCHAR(20) NOT NULL CHECK (estado IN ('PENDIENTE', 'ENVIADO', 'FALLIDO')),
+  intentos INTEGER NOT NULL DEFAULT 0 CHECK (intentos >= 0),
+  ultimo_error VARCHAR(250),
+  proveedor_id VARCHAR(160),
+  usuario_id UUID NOT NULL REFERENCES usuario(id) ON DELETE RESTRICT,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS despacho_notificacion_contrato_idx ON despacho_notificacion (contrato_id, creado_en DESC);
+
+CREATE TABLE IF NOT EXISTS despacho_intento (
+  id UUID PRIMARY KEY,
+  notificacion_id VARCHAR(64) NOT NULL REFERENCES despacho_notificacion(id) ON DELETE RESTRICT,
+  numero INTEGER NOT NULL CHECK (numero > 0),
+  estado VARCHAR(20) NOT NULL CHECK (estado IN ('ENVIADO', 'FALLIDO')),
+  error VARCHAR(250),
+  usuario_id UUID NOT NULL REFERENCES usuario(id) ON DELETE RESTRICT,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (notificacion_id, numero)
 );

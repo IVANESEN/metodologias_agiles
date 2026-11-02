@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import * as signatureData from '../frontend/firma-datos.mjs';
+import { createTechnicalSheet } from '../frontend/ficha-tecnica.mjs';
 
 const html = await readFile(new URL('../frontend/index.html', import.meta.url), 'utf8');
 const sources = Object.fromEntries(await Promise.all(['sesion.js', 'app.js', 'alertas.js', 'cobros.mjs', 'firma.js', 'recepcion.js', 'entrega.js'].map(async file => [file,
@@ -92,6 +93,9 @@ function startPage({ permisos = commonPermissions, role = 'residente', hash = ''
   const events = new Node('window');
   const context = vm.createContext({ document, location, URL, URLSearchParams, Request, Response, AbortController,
     Intl, Date, Map, Set, Error, TypeError, crypto: webcrypto, ...signatureData,
+    // El harness elimina imports de app.js; conserva el constructor de producción
+    // y le proporciona el mismo DOM aislado que usa el resto de la página.
+    createTechnicalSheet: item => createTechnicalSheet(item, document),
     setTimeout: callback => { intervals.push(callback); return intervals.length; }, clearTimeout() {},
     setInterval: callback => { intervals.push(callback); return intervals.length; },
     addEventListener: events.addEventListener.bind(events),

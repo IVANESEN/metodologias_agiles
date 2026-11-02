@@ -119,3 +119,57 @@ el `commit` corresponde al despliegue restaurado.
 El rollback restaura la aplicación y conserva la base y sus datos. Con
 Auto-Deploy en **Off**, el siguiente despliegue lo realizará GitHub Actions
 cuando se integre una corrección en `main` y pasen las pruebas.
+
+## Actualizaciones del esquema y recuperación
+
+La preparación es explícita. El arranque PostgreSQL solo inspecciona; PGlite local
+sí prepara su esquema. No ejecutar scripts SQL de instalación directamente sobre
+una base existente. Conservar una copia verificable antes de preparar el entorno
+compartido: exportar mediante `pg_dump --format=custom` desde un entorno privado
+con las credenciales fuera del historial, y ensayar `pg_restore` en otra base.
+El respaldo debe incluir todas las tablas de la aplicación, permisos y la fecha
+y versión de origen. La existencia de un archivo sin restauración comprobada no
+demuestra que el respaldo sea recuperable.
+
+1. Restaurar una copia en una base de prueba; usar su conexión privada y revisar
+   `npm run db:inspect`, conteos, restricciones y permisos. No usar producción
+   para el ensayo.
+2. Desde la versión candidata ejecutar `npm run db:init -- --existing-reviewed
+   --schema-only` o `npm run db:portal` si también se necesitan las tasas iniciales.
+   Ambos preservan contratos, pagos y evidencias. La ampliación de roles y estados
+   se realiza en la misma transacción que las tablas y restricciones; un fallo
+   revierte todos esos cambios. `db:portal -- --demo` es solo para bases de prueba;
+   la carga de demostración es posterior y no forma parte de esa transacción.
+3. La preparación serializa con un bloqueo asesor, limita espera de bloqueos a
+   10 segundos y sentencias a 60 segundos. Si vence un límite, conservar el error,
+   revisar la transacción que bloquea y repetir el mismo comando tras resolverlo.
+   No quitar restricciones ni interrumpir sesiones ajenas para forzar el cambio.
+4. Ejecutar `npm run db:verify`. Después reiniciar la aplicación candidata y
+   comprobar `/api/health`, catálogo, contratos, evidencias y programación. Repetir
+   la preparación no debe duplicar registros ni cambiar importes históricos.
+5. Publicar solo tras la revisión del equipo. Esta tarea no autoriza despliegue.
+
+La expansión añade tablas/columnas y conserva los valores de roles y estados
+anteriores. El código anterior al ajuste puede leer las columnas antiguas,
+pero su inventario estricto rechaza tablas nuevas y sus reglas de disponibilidad
+no conocen los estados `FINALIZADO` y `DEVUELTO`. Por ello no se garantiza un
+rollback de aplicación a una versión anterior sin probarla contra el esquema
+expandido. Mantener en revisión una versión de recuperación que acepte ese
+esquema y conserve el bloqueo de rentas. Durante la transición, detener escrituras
+o restringir a un solo grupo de servidores ya actualizado; no mezclar escritores
+con reglas viejas y nuevas.
+
+Si la migración falla antes del commit, la transacción revierte DDL y datos
+insertados; comprobar inventario y ejecutar de nuevo tras corregir la causa.
+Si falla la aplicación después del commit, conservar el esquema expandido y
+recuperar con una corrección compatible. No eliminar tablas o columnas ni reducir
+los CHECK si ya se registraron nuevos estados. Restaurar un respaldo solo es
+último recurso: hacerlo primero en otra base, reconciliar las escrituras posteriores
+al respaldo y coordinar el cambio con el equipo. La restauración puede perder
+operaciones posteriores y exige una ventana acordada. Render Rollback no restaura
+la base de datos.
+
+Las pruebas `postgres-preparation.test.mjs`, `preparar-portal.test.mjs` y
+`migration-recovery.test.mjs` ejecutan SQL en PGlite aislado, con evidencia TLS
+simulada. Cubren actualización de datos históricos, reintento, reapertura y fallo
+inyectado; no acreditan TLS real, respaldo operativo ni recuperación de Supabase.

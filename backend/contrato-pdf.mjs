@@ -2,11 +2,9 @@
 // la base (contractWithMachinery) y las cláusulas salen de buildContractDocument,
 // así el PDF y GET /api/contratos/:id/documento muestran el mismo texto.
 //
-// Limitación conocida: se usan las fuentes estándar Helvetica, que solo cubren
-// Windows-1252 (Latin-1 más algunos signos como € “ ” – —). pdfkit no falla con
-// emoji o caracteres CJK, los dibuja como basura; por eso safeText los cambia
-// por "?" antes de escribirlos. Para soportarlos haría falta incrustar una
-// fuente TrueType con esos glifos.
+// Helvetica cubre Windows-1252. La API valida esa restricción antes de guardar
+// contratos; los datos históricos incompatibles se rechazan de forma explícita
+// al generar el PDF. Nunca se sustituyen letras de un nombre por otro carácter.
 import PDFDocument from 'pdfkit';
 import { SEGUROS, FORMAS_PAGO, buildContractDocument } from './contrato-legal.mjs';
 
@@ -17,18 +15,26 @@ const ITALIC = 'Helvetica-Oblique';
 // Caracteres de Windows-1252 fuera del rango Latin-1 (posiciones 0x80-0x9F).
 const CP1252_EXTRA = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ');
 
+export const mensajeTextoContrato = 'Usa caracteres compatibles con el contrato PDF: letras latinas (incluidas tildes y ñ), números y signos de Windows-1252; no se admiten emoji ni otros alfabetos.';
+
+export function textoContratoCompatible(value) {
+  if (value === null || value === undefined) return true;
+  return [...String(value).normalize('NFC')].every((char) => {
+    const code = char.codePointAt(0);
+    return char === '\t' || char === '\n' || char === '\r' ||
+      (code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff) || CP1252_EXTRA.has(char);
+  });
+}
+
 export function safeText(value) {
   if (value === null || value === undefined) return '';
-  let result = '';
-  // NFC junta letras con tilde escritas en dos partes (e + ´) en un solo carácter.
-  for (const char of String(value).normalize('NFC')) {
-    const code = char.codePointAt(0);
-    if (char === '\t' || char === '\n' || char === '\r') result += ' ';
-    else if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) continue;
-    else if (code <= 0xff || CP1252_EXTRA.has(char)) result += char;
-    else result += '?';
+  if (!textoContratoCompatible(value)) {
+    const error = new Error(mensajeTextoContrato);
+    error.code = 'UNSUPPORTED_PDF_TEXT';
+    throw error;
   }
-  return result;
+  // Normalización canónica: e + acento conserva la misma letra que é.
+  return String(value).normalize('NFC').replace(/[\t\n\r]/g, ' ');
 }
 
 function usd(value) {

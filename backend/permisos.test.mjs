@@ -7,6 +7,7 @@ import { createServer } from './app.mjs';
 import { createUser, hashToken, guardPermission } from './auth.mjs';
 import { createMemoryMailer } from './mailer.mjs';
 import { permisosParaRol } from './permisos.mjs';
+import { PNG } from './test-fotografias.mjs';
 
 const compartidos = [
   'maquinaria.consultar', 'contratos.crear', 'contratos.consultar',
@@ -128,7 +129,7 @@ test('HU2: autorización HTTP con sesiones reales y base local temporal', async 
       assert.equal(creado.response.headers.get('location'), `/api/contratos/${id}`);
       const recepcion = await solicitar('/api/recepciones', { cookie, body: {
         id: randomUUID(), contrato_id: id, maquinaria_id: 1, horometro: 500 + indice,
-        fotos: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z5ZkAAAAASUVORK5CYII='],
+        fotos: [PNG],
       } });
       assert.equal(recepcion.status, 201);
       assert.equal(recepcion.body.contrato_id, id);

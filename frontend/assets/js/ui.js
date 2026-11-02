@@ -69,7 +69,8 @@ export const daysBetween = (start, end) => Math.round((Date.parse(`${end}T00:00:
 export const initials = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 
 export const ESTADOS = {
-  PENDIENTE: 'Pendiente', APROBADO: 'Aprobado', EN_ENTREGA: 'En entrega', COMPLETADO: 'Completado',
+  PENDIENTE: 'Pendiente', APROBADO: 'Aprobado', EN_ENTREGA: 'En entrega', COMPLETADO: 'Entrega completada',
+  FINALIZADO: 'Renta finalizada', DEVUELTO: 'Devuelto',
   CANCELADO: 'Cancelado', RECHAZADO: 'Rechazado',
   BORRADOR: 'Borrador', ACTIVO: 'Publicado', ARCHIVADO: 'Archivado',
 };

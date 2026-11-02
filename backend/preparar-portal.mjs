@@ -10,9 +10,6 @@ import {
 } from './postgres-preparation.mjs';
 import { loadDemoData } from './demo-data.mjs';
 
-const quote = (value) => `"${value.replaceAll('"', '""')}"`;
-const ROLES = "('residente', 'gerente', 'admin', 'empleado', 'proveedor', 'cliente')";
-
 export async function prepararPortal(database, { demo = false, log = console.info } = {}) {
   if (database.provider !== 'postgresql') {
     throw new PostgresPreparationError('POSTGRES_REQUIRED',
@@ -33,21 +30,13 @@ export async function prepararPortal(database, { demo = false, log = console.inf
   }
   log(`    Tablas encontradas en ${schema}: ${names.join(', ')}`);
 
-  log('2/5 Ampliando los roles permitidos (migración 20261026_portal_multirrol)…');
-  await database.transaction(async (tx) => {
-    await tx.query("SELECT set_config('lock_timeout', '10s', true)");
-    await tx.exec(`ALTER TABLE ${quote(schema)}.usuario DROP CONSTRAINT IF EXISTS usuario_rol_check;
-      ALTER TABLE ${quote(schema)}.usuario ADD CONSTRAINT usuario_rol_check CHECK (rol IN ${ROLES});`);
-  });
-
-  log('3/5 Creando columnas y tablas nuevas del portal…');
-  // Las semillas de catálogo solo aplican a bases vacías; aquí nunca se reemplazan datos.
-  await initializePostgresDatabase(database, { schemaSql, seedsSql: '', existingReviewed: true });
-
-  log('4/5 Registrando las tasas iniciales (no cambia tasas ya existentes)…');
   const tasas = /INSERT INTO configuracion[\s\S]*?ON CONFLICT \(clave\) DO NOTHING;/.exec(seedsSql)?.[0];
   if (!tasas) throw new PostgresPreparationError('RATES_MISSING', 'No se encontró el bloque de tasas en database/seeds.sql.');
-  await database.exec(tasas.replace('INSERT INTO configuracion', `INSERT INTO ${quote(schema)}.configuracion`));
+  log('2/5 Preparando ampliación de roles y estados sin cambiar registros históricos…');
+  log('3/5 Creando columnas y tablas nuevas del portal…');
+  log('4/5 Registrando tasas iniciales en la misma transacción (no cambia tasas existentes)…');
+  // Roles, columnas, tablas y tasas se confirman juntos o se revierten juntos.
+  await initializePostgresDatabase(database, { schemaSql: `${schemaSql}\n${tasas}`, seedsSql: '', existingReviewed: true });
 
   log('5/5 Verificando el esquema como lo hará el servidor al arrancar…');
   const after = await assertPostgresReady(database);

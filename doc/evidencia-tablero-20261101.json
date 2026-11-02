@@ -1,0 +1,287 @@
+{
+  "consultado": "2026-11-01",
+  "url": "https://docs.google.com/spreadsheets/d/1aHvbDplsFXqzVZgihQGV05PwfuZEv1wSXmTZ4msjij0/edit",
+  "hojas": [
+    {
+      "range": "Untitled!A1:Z120",
+      "majorDimension": "ROWS",
+      "values": [
+        [
+          "Prioridad",
+          "Historia de Usuario",
+          "Rol / Persona",
+          "Justificación de Valor al Cliente / Negocio",
+          "TO DO (Criterios de Aceptación / Subtareas)",
+          "PROGRESS"
+        ],
+        [
+          "1",
+          "HU3: Consulta de maquinaria disponible con filtros",
+          "Gerente de operaciones / Cliente",
+          "Permite encontrar de inmediato equipos libres para la obra sin llamadas ni demoras, resolviendo la necesidad primaria de contratación.",
+          "Filtrar resultados por tipo, fechas y ubicación\nValidar que fecha fin sea mayor o igual a fecha inicio",
+          "DONE"
+        ],
+        [
+          "2",
+          "HU8: Reserva y bloqueo automático de maquinaria",
+          "Gerente de operaciones / Cliente",
+          "Garantiza al cliente que la máquina apartada no será alquilada a otra constructora simultáneamente, eliminando conflictos de sobreventa.",
+          "Bloquear fechas en el calendario tras reserva confirmada\nRechazar solicitudes con superposición o solapamiento de fechas\nControlar concurrencia ante peticiones simultáneas del mismo equipo, solo uno puedo resrevar",
+          "DONE"
+        ],
+        [
+          "3",
+          "HU6a: Creación de contrato de alquiler",
+          "Gerente de operaciones / Cliente",
+          "Formaliza con transparencia las tarifas, fechas, seguros y operador asignado, brindando certeza jurídica y operativa al acuerdo.",
+          "Guardar contrato con cliente, máquina, fechas, operador y condiciones\nBloquear guardado y señalar campos obligatorios faltantes\nRecuperar datos íntegros del contrato mediante su ID",
+          "DONE"
+        ],
+        [
+          "4",
+          "HU6b: Descarga de contrato en PDF",
+          "Gerente de operaciones / Cliente",
+          "Otorga al cliente y al departamento contable el respaldo documental inmediato y transportable para autorización de compras.",
+          "Generar y descargar archivo PDF legible y formateado\nGarantizar coincidencia exacta entre datos del PDF y la BD (maquinaria y fecha esten en la BD)\nMostrar error controlado si el ID del contrato no existe",
+          "DONE"
+        ],
+        [
+          "5",
+          "HU7: Firma simulada desde el teléfono",
+          "Cliente que revisa su contrato",
+          "Agiliza el cierre del trato desde el teléfono celular del cliente en campo o en oficina sin requerir desplazamientos físicos ni papelería.",
+          "Almacenar firma y vincularla permanentemente al contrato\nImpedir envío si el lienzo de firma está vacío",
+          "DONE"
+        ],
+        [
+          "6",
+          "HU5: Consulta de ficha técnica con fotos y horómetro",
+          "Usuario con permiso / Cliente",
+          "Brinda total transparencia al cliente sobre el desgaste real del equipo, horas de uso y estado físico antes del envío.",
+          "Mostrar fotos actuales, horómetro y ficha técnica del equipo\nEtiquetar como \"no disponible\" datos o lecturas faltantes\nValidar correspondencia exacta entre ficha y maquinaria consultada",
+          "DONE"
+        ],
+        [
+          "7",
+          "HU4a: Alertas de vencimiento de contratos",
+          "Gerente de operaciones / Cliente",
+          "Previene paradas no planificadas de obra al anticipar extensiones de renta antes de que venza el plazo pactado.",
+          "Alertar contratos que alcancen el umbral de N días para vencer\r\nExcluir de la lista contratos con vigencia fuera del umbral\r\nRefrescar automáticamente el listado ante cambios de fechas",
+          "DONE"
+        ],
+        [
+          "8",
+          "HU4b: Alertas de contratos pendientes de pago",
+          "Gerente de operaciones",
+          "Mantiene claridad en los estados de cuenta y evita suspensiones del servicio de maquinaria por saldos pendientes.",
+          "Listar contratos marcados con estado de pago pendiente\r\nExcluir del listado de cobro contratos solventes o pagados\r\nActualizar estado en tiempo real tras registrar pago",
+          "DONE"
+        ],
+        [
+          "9",
+          "HU1a: Inicio de sesión",
+          "Usuario registrado",
+          "Habilita el acceso seguro a los espacios de trabajo y protege la información confidencial de contratos y tarifas de cada cliente.",
+          "Conceder acceso e identificar usuario con credenciales válidas\r\nRechazar credenciales erróneas sin revelar el campo incorrecto\r\nRedirigir al login y bloquear rutas ante accesos no autenticados",
+          "DONE"
+        ],
+        [
+          "10",
+          "HU1b: Recuperación de contraseña",
+          "Usuario que olvidó clave",
+          "Evita la pérdida permanente de acceso a la cuenta del cliente permitiendo autogestión sin depender de soporte técnico.",
+          "Enviar enlace de restablecimiento por correo y actualizar clave\r\nInvalidar enlace de recuperación inmediatamente tras su primer uso\r\nMostrar respuesta genérica preventiva si el correo no existe",
+          "DONE"
+        ],
+        [
+          "11",
+          "HU2: Matriz de funciones y permisos según el rol",
+          "Residente / Gerente",
+          "Garantiza la gobernanza operativa asegurando que solo el personal autorizado apruebe gastos y modificaciones de contratos.",
+          "Desplegar vistas y acciones autorizadas según rol (residente/gerente)\nRechazar peticiones directas en backend a rutas no permitidas\n",
+          "TO DO"
+        ],
+        [
+          "12",
+          " HU10: Registro de recepción en obra con fotos",
+          "Cliente en obra",
+          "Permite auditar el estado físico de la máquina al llegar a la obra para deslindar responsabilidades por daños previos.",
+          "Adjuntar fotografías del estado del equipo tomadas en obra\r\nRegistrar lectura de horómetro al recibir la maquinaria\r\nPersistir y vincular la evidencia de entrega al contrato",
+          "TO DO"
+        ],
+        [
+          "13",
+          " HU9a: Programación de entrega y transportista",
+          "Gerente de operaciones",
+          "Optimiza los tiempos logísticos informando cuándo y quién trasladará el equipo pesado a la obra.",
+          "Asignar fecha, franja horaria y transportista al flete\nBloquear guardado si falta definir transportista o ventana horaria\nConsultar estado de programación de fecha desde el detalle del contrato",
+          "TO DO"
+        ],
+        [
+          "14",
+          " HU9b: Notificación de entrega al transportista",
+          "Gerente de operaciones",
+          "Asegura una comunicación rápida y sin fricciones con el conductor asignado para coordinar la ruta de despacho.",
+          "Enviar orden de despacho con detalles de carga al conductor\nCapturar y notificar fallas técnicas en el envío del mensaje (si es necesario)",
+          "TO DO"
+        ]
+      ]
+    },
+    {
+      "range": "'Sprint 2 (12-17 oct)'!A1:Z100",
+      "majorDimension": "ROWS",
+      "values": [
+        [
+          "Prioridad",
+          "Historia de Usuario",
+          "Rol / Persona",
+          "Justificación de Valor al Cliente / Negocio",
+          "TO DO (Criterios de Aceptación / Subtareas)",
+          "PROGRESS",
+          "comentarios"
+        ],
+        [
+          "6",
+          "HU5: Consulta de ficha técnica con fotos y horómetro",
+          "Mariela Flores",
+          "Brinda total transparencia al cliente sobre el desgaste real del equipo, horas de uso y estado físico antes del envío.",
+          "Mostrar fotos actuales, horómetro y ficha técnica del equipo\nEtiquetar como \"no disponible\" datos o lecturas faltantes\nValidar correspondencia exacta entre ficha y maquinaria consultada",
+          "DONE"
+        ],
+        [
+          "7",
+          "HU4a: Alertas de vencimiento de contratos",
+          "Kevin Landos",
+          "Previene paradas no planificadas de obra al anticipar extensiones de renta antes de que venza el plazo pactado.",
+          "Alertar contratos que alcancen el umbral de N días para vencer\r\nExcluir de la lista contratos con vigencia fuera del umbral\r\nRefrescar automáticamente el listado ante cambios de fechas",
+          "DONE"
+        ],
+        [
+          "8",
+          "HU4b: Alertas de contratos pendientes de pago",
+          "José Sandoval",
+          "Mantiene claridad en los estados de cuenta y evita suspensiones del servicio de maquinaria por saldos pendientes.",
+          "Listar contratos marcados con estado de pago pendiente\r\nExcluir del listado de cobro contratos solventes o pagados\r\nActualizar estado en tiempo real tras registrar pago",
+          "DONE"
+        ],
+        [
+          "9",
+          "HU1a: Inicio de sesión",
+          "Ivan Vázquez",
+          "Habilita el acceso seguro a los espacios de trabajo y protege la información confidencial de contratos y tarifas de cada cliente.",
+          "Conceder acceso e identificar usuario con credenciales válidas\r\nRechazar credenciales erróneas sin revelar el campo incorrecto\r\nRedirigir al login y bloquear rutas ante accesos no autenticados",
+          "DONE"
+        ],
+        [
+          "10",
+          "HU1b: Recuperación de contraseña",
+          "Víctor Quijada",
+          "Evita la pérdida permanente de acceso a la cuenta del cliente permitiendo autogestión sin depender de soporte técnico.",
+          "Enviar enlace de restablecimiento por correo y actualizar clave\r\nInvalidar enlace de recuperación inmediatamente tras su primer uso\r\nMostrar respuesta genérica preventiva si el correo no existe",
+          "DONE"
+        ]
+      ]
+    },
+    {
+      "range": "'Sprint 3(19-24 oct)'!A1:Z100",
+      "majorDimension": "ROWS",
+      "values": [
+        [
+          "Prioridad",
+          "Historia de Usuario",
+          "Rol / Persona",
+          "Justificación de Valor al Cliente / Negocio",
+          "TO DO (Criterios de Aceptación / Subtareas)",
+          "PROGRESS"
+        ],
+        [
+          "11",
+          "HU2: Matriz de funciones y permisos según el rol",
+          "José Mario Sandoval",
+          "Garantiza la gobernanza operativa asegurando que solo el personal autorizado apruebe gastos y modificaciones de contratos.",
+          "Desplegar vistas y acciones autorizadas según rol (residente/gerente)\nRechazar peticiones directas en backend a rutas no permitidas\n",
+          "TO DO"
+        ],
+        [
+          "12",
+          " HU10: Registro de recepción en obra con fotos",
+          "Mariela flores",
+          "Permite auditar el estado físico de la máquina al llegar a la obra para deslindar responsabilidades por daños previos.",
+          "Adjuntar fotografías del estado del equipo tomadas en obra\r\nRegistrar lectura de horómetro al recibir la maquinaria\r\nPersistir y vincular la evidencia de entrega al contrato",
+          "TO DO"
+        ],
+        [
+          "13",
+          " HU9a: Programación de entrega y transportista",
+          "kevin landos",
+          "Optimiza los tiempos logísticos informando cuándo y quién trasladará el equipo pesado a la obra.",
+          "Asignar fecha, franja horaria y transportista al flete\nBloquear guardado si falta definir transportista o ventana horaria\nConsultar estado de programación de fecha desde el detalle del contrato",
+          "TO DO"
+        ],
+        [
+          "14",
+          " HU9b: Notificación de entrega al transportista",
+          "victor",
+          "Asegura una comunicación rápida y sin fricciones con el conductor asignado para coordinar la ruta de despacho.",
+          "Enviar orden de despacho con detalles de carga al conductor\nCapturar y notificar fallas técnicas en el envío del mensaje (si es necesario)",
+          "TO DO"
+        ]
+      ]
+    }
+  ],
+  "sprint1": {
+    "range": "'Sprint 1 (5-10 oct)'!A1:Z100",
+    "majorDimension": "ROWS",
+    "values": [
+      [
+        "Prioridad",
+        "Historia de Usuario",
+        "Rol / Persona",
+        "Justificación de Valor al Cliente / Negocio",
+        "TO DO (Criterios de Aceptación / Subtareas)",
+        "PROGRESS"
+      ],
+      [
+        "1",
+        "HU3: Consulta de maquinaria disponible con filtros",
+        "José Sandoval",
+        "Permite encontrar de inmediato equipos libres para la obra sin llamadas ni demoras, resolviendo la necesidad primaria de contratación.",
+        "Filtrar resultados por tipo, fechas y ubicación\nValidar que fecha fin sea mayor o igual a fecha inicio",
+        "DONE"
+      ],
+      [
+        "2",
+        "HU8: Reserva y bloqueo automático de maquinaria",
+        "Mariela Flores",
+        "Garantiza al cliente que la máquina apartada no será alquilada a otra constructora simultáneamente, eliminando conflictos de sobreventa.",
+        "Bloquear fechas en el calendario tras reserva confirmada\nRechazar solicitudes con superposición o solapamiento de fechas\nControlar concurrencia ante peticiones simultáneas del mismo equipo, solo uno puedo resrevar",
+        "Done"
+      ],
+      [
+        "3",
+        "HU6a: Creación de contrato de alquiler",
+        "Ivan Vasquez",
+        "Formaliza con transparencia las tarifas, fechas, seguros y operador asignado, brindando certeza jurídica y operativa al acuerdo.",
+        "Guardar contrato con cliente, máquina, fechas, operador y condiciones\nBloquear guardado y señalar campos obligatorios faltantes\nRecuperar datos íntegros del contrato mediante su ID",
+        "Done"
+      ],
+      [
+        "4",
+        "HU6b: Descarga de contrato en PDF",
+        "kevin landos",
+        "Otorga al cliente y al departamento contable el respaldo documental inmediato y transportable para autorización de compras.",
+        "Generar y descargar archivo PDF legible y formateado\nGarantizar coincidencia exacta entre datos del PDF y la BD (maquinaria y fecha esten en la BD)\nMostrar error controlado si el ID del contrato no existe",
+        "Done"
+      ],
+      [
+        "5",
+        "HU7: Firma simulada desde el teléfono",
+        "victor quijada",
+        "Agiliza el cierre del trato desde el teléfono celular del cliente en campo o en oficina sin requerir desplazamientos físicos ni papelería.",
+        "Almacenar firma y vincularla permanentemente al contrato\nImpedir envío si el lienzo de firma está vacío",
+        "done"
+      ]
+    ]
+  }
+}

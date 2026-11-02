@@ -1,5 +1,11 @@
 # Validación de instalación y migraciones
 
+> Actualización del 2 de noviembre de 2026: el PR #25 incorpora ahora una migración
+> de despliegue registrada mediante `prestart` → `db:migrate`. El procedimiento
+> manual y los resultados del 1 de noviembre que se conservan abajo describen la
+> revisión anterior. Para el flujo vigente, véase
+> [Migración automática del PR #25](MIGRACION_AUTOMATICA_PR25.md).
+
 El 1 de noviembre de 2026 se verificaron los ajustes H04, H05 y H07 sobre
 `b8a580d` más las modificaciones de la rama de trabajo `victo`. Los cambios no
 están integrados en `main` ni desplegados. La ejecución corresponde a una

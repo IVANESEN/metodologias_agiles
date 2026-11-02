@@ -257,7 +257,7 @@ Ejemplo del cuerpo de un pago (sustituir el UUID por uno nuevo para cada pago di
 
 ### Preparar la base existente
 
-PGlite aplica `database/schema.sql` automáticamente al iniciar. No se necesita configuración nueva. Para PostgreSQL/Supabase, desde esta versión y **antes de publicar en main**, preparar explícitamente la base con el código actualizado; el arranque remoto no ejecuta migraciones. El push a `main` activa el despliegue a Render descrito en [DESPLIEGUE.md](DESPLIEGUE.md).
+PGlite aplica `database/schema.sql` automáticamente al iniciar. Para PostgreSQL/Supabase, `npm start` ejecuta primero `db:migrate`: aplica únicamente la ampliación registrada `20261101_reajustes` sobre la versión previa compatible de 14 tablas, sin semillas ni reescritura de datos históricos. Si el esquema ya está actualizado, omite el DDL; una base vacía requiere la instalación explícita siguiente. El push a `main` activa el despliegue a Render descrito en [DESPLIEGUE.md](DESPLIEGUE.md#actualizaciones-del-esquema-y-recuperación).
 
 1. Conservar la conexión del entorno objetivo en `.env` y verificar en el panel que el esquema privado no esté expuesto, según la guía anterior. No modificar credenciales ni desactivar TLS.
 2. Ejecutar `npm.cmd run db:inspect` y revisar estructura, permisos y cantidades de filas. Deben conservarse los contratos y equipos existentes; si aparece una tabla `pago` incompatible u objetos en otro esquema, resolver esa revisión antes de continuar.

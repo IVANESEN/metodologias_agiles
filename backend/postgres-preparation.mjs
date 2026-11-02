@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 const APP_TABLES = [
   'maquinaria',
   'contrato',
@@ -20,6 +22,7 @@ const APP_TABLES = [
 const API_ROLES = ['anon', 'authenticated', 'service_role'];
 const USER_ROLES = ['residente', 'gerente', 'admin', 'empleado', 'proveedor', 'cliente'];
 const ORDER_STATES = ['PENDIENTE', 'APROBADO', 'EN_ENTREGA', 'COMPLETADO', 'CANCELADO', 'RECHAZADO', 'FINALIZADO', 'DEVUELTO'];
+const REAJUSTES_TABLES = ['recepcion_correccion', 'despacho_notificacion', 'despacho_intento'];
 const INTERNAL_SCHEMAS = new Set(['auth', 'storage', 'realtime', '_realtime', 'extensions',
   'supabase_functions', 'supabase_migrations', 'vault', 'graphql', 'graphql_public',
   'pgsodium', 'pgsodium_masks', 'net', 'cron']);
@@ -276,7 +279,8 @@ export async function inspectPostgresDatabase(database) {
   }
 }
 
-function checkInventory(inventory, schema, { current = false, existingReviewed = false } = {}) {
+function checkInventory(inventory, schema, { current = false, existingReviewed = false,
+  pendingReajustes = false } = {}) {
   if (inventory.visibleDataApiSchemas.includes(schema)) {
     fail('SCHEMA_EXPOSED_TO_DATA_API', 'El esquema de la aplicación está expuesto por la Data API. Retíralo de Exposed schemas antes de continuar.');
   }
@@ -335,9 +339,13 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
     if (current && ['usuario', 'pedido'].includes(table.name)) {
       const column = table.name === 'usuario' ? 'rol' : 'estado';
       const expected = table.name === 'usuario' ? USER_ROLES : ORDER_STATES;
+      const supported = [expected];
+      if (pendingReajustes) supported.push(table.name === 'usuario'
+        ? ['residente', 'gerente'] : ORDER_STATES.filter(value => !['FINALIZADO', 'DEVUELTO'].includes(value)));
       const allowedValues = table.constraints.some((constraint) => constraint.type === 'c' && constraint.validated &&
         sameColumns(constraint.columns, [column]) &&
-        [...constraint.definition.matchAll(/'([^']+)'/g)].map((match) => match[1]).sort().join(',') === [...expected].sort().join(','));
+        supported.some(values => [...constraint.definition.matchAll(/'([^']+)'/g)]
+          .map((match) => match[1]).sort().join(',') === [...values].sort().join(',')));
       if (!allowedValues) fail('DATABASE_SCHEMA_NOT_READY',
         'Falta ampliar los roles o estados operativos. Ejecuta la preparación revisada antes de iniciar esta versión.');
     }
@@ -441,7 +449,8 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
       fail('DATABASE_PRIVACY_NOT_READY', 'Falta proteger las tablas del backend. Revisa la base e inicializa de forma explícita.');
     }
   }
-  if (current && existing.length !== APP_TABLES.length) {
+  if (current && APP_TABLES.some(name => !existing.some(table => table.name === name) &&
+      !(pendingReajustes && REAJUSTES_TABLES.includes(name)))) {
     fail('DATABASE_SCHEMA_NOT_READY', 'Faltan tablas o columnas de la aplicación. Ejecuta la inspección y db:init antes de iniciar PostgreSQL.');
   }
   return existing;
@@ -452,6 +461,61 @@ export async function assertPostgresReady(database) {
   const inventory = await inspectPostgresDatabase(database);
   checkInventory(inventory, schemaFor(database), { current: true });
   return inventory;
+}
+
+function needsReajustes(inventory, schema) {
+  // Only the known fourteen-table release may be upgraded automatically. Existing
+  // new tables must already satisfy every constraint and privacy check as well.
+  checkInventory(inventory, schema, { current: true, pendingReajustes: true });
+  try {
+    checkInventory(inventory, schema, { current: true });
+    return false;
+  } catch (error) {
+    if (error instanceof PostgresPreparationError && error.code === 'DATABASE_SCHEMA_NOT_READY') return true;
+    throw error;
+  }
+}
+
+/** Release migration, run by npm prestart; never initializes a database or loads seeds. */
+export async function migratePostgresDatabase(database) {
+  const migration = '20261101_reajustes';
+  const schema = schemaFor(database);
+  try {
+    const verified = await database.verifyConnection();
+    const privateNetwork = database.renderInternal === true && verified?.privateNetwork === true;
+    if (!privateNetwork && (!verified?.tls?.encrypted || !verified.tls.authorized)) {
+      fail('DATABASE_TLS_NOT_VERIFIED', 'La migración requiere una conexión PostgreSQL con TLS verificado.');
+    }
+    const before = await inspectPostgresDatabase(database);
+    if (!needsReajustes(before, schema)) return { migration, applied: false, createdTables: [] };
+    // This registered SQL targets exactly the schema reviewed for this release.
+    // Other schema names still support explicit db:init/db:portal preparation.
+    if (schema !== 'constructora_private') fail('UNSUPPORTED_MIGRATION_SCHEMA',
+      'La migración automática 20261101 requiere constructora_private. Prepara otros esquemas de forma explícita.');
+    const sql = await readFile(new URL('../database/migrations/20261101_reajustes.sql', import.meta.url), 'utf8');
+    const wrapped = /^(?:\s|--[^\r\n]*(?:\r?\n|$))*BEGIN;\s*([\s\S]*?)\s*COMMIT;\s*$/i.exec(sql);
+    if (!wrapped) fail('INVALID_MIGRATION_SCRIPT', 'La migración registrada no tiene la transacción esperada. Revisa el archivo SQL.');
+    return await database.transaction(async tx => {
+      await tx.query("SELECT set_config('lock_timeout', '10s', true)");
+      await tx.query("SELECT set_config('statement_timeout', '60s', true)");
+      await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`constructora-init:${schema}`]);
+      const scoped = { ...tx, schema, requiresDataApiReview: database.requiresDataApiReview };
+      const locked = await inspectPostgresDatabase(scoped);
+      // A concurrent startup may have completed the migration while we waited.
+      if (!needsReajustes(locked, schema)) return { migration, applied: false, createdTables: [] };
+      // Strip only the outer BEGIN/COMMIT: post-validation must precede commit.
+      await tx.exec(wrapped[1]);
+      await assertPostgresReady(scoped);
+      return { migration, applied: true,
+        createdTables: REAJUSTES_TABLES.filter(name => !locked.appTables.some(table => table.name === name)) };
+    });
+  } catch (error) {
+    if (error instanceof PostgresPreparationError) throw error;
+    if (error?.code === '55P03' || error?.code === '57014') fail('DATABASE_MIGRATION_TIMEOUT',
+      'La migración agotó el límite de bloqueo o ejecución y se revirtió. Revisa las operaciones pendientes antes de reintentar.');
+    fail('DATABASE_MIGRATION_FAILED',
+      'No se pudo completar la migración 20261101. La transacción se revirtió; revisa el esquema y los permisos antes de reintentar.');
+  }
 }
 
 function validateScripts(schemaSql, seedsSql) {

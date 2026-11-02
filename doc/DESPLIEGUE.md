@@ -69,8 +69,10 @@ desde un entorno privado ya configurado: ejecuta `npm run db:inspect`, revisa
 el inventario y prepara el esquema explícitamente con `db:init` cuando
 corresponda. Después ejecuta `npm run db:verify`; comprueba TLS, el esquema
 y las lecturas de `/api/health` y `/api/maquinaria` sin crear tablas ni datos.
-El servidor en producción comprueba el esquema al arrancar y no ejecuta
-migraciones automáticamente.
+`npm start` ejecuta primero `prestart` → `db:migrate`: aplica únicamente la
+migración registrada `20261101_reajustes` si encuentra la versión previa compatible
+de 14 tablas en `constructora_private`. Después el servidor comprueba el esquema.
+Las instalaciones vacías o esquemas incompatibles requieren preparación explícita.
 
 Cambiar `DATABASE_URL` no copia los datos de la base anterior. Editar `.env`
 o estos archivos tampoco modifica las variables reales de Render ni publica
@@ -122,9 +124,9 @@ cuando se integre una corrección en `main` y pasen las pruebas.
 
 ## Actualizaciones del esquema y recuperación
 
-La preparación es explícita. El arranque PostgreSQL solo inspecciona; PGlite local
-sí prepara su esquema. No ejecutar scripts SQL de instalación directamente sobre
-una base existente. Conservar una copia verificable antes de preparar el entorno
+La instalación inicial continúa siendo explícita; PGlite local prepara su esquema.
+Para esta actualización, `npm start` ejecuta la migración registrada antes del
+servidor. Conservar una copia verificable antes de actualizar el entorno
 compartido: exportar mediante `pg_dump --format=custom` desde un entorno privado
 con las credenciales fuera del historial, y ensayar `pg_restore` en otra base.
 El respaldo debe incluir todas las tablas de la aplicación, permisos y la fecha
@@ -134,12 +136,13 @@ demuestra que el respaldo sea recuperable.
 1. Restaurar una copia en una base de prueba; usar su conexión privada y revisar
    `npm run db:inspect`, conteos, restricciones y permisos. No usar producción
    para el ensayo.
-2. Desde la versión candidata ejecutar `npm run db:init -- --existing-reviewed
-   --schema-only` o `npm run db:portal` si también se necesitan las tasas iniciales.
-   Ambos preservan contratos, pagos y evidencias. La ampliación de roles y estados
-   se realiza en la misma transacción que las tablas y restricciones; un fallo
-   revierte todos esos cambios. `db:portal -- --demo` es solo para bases de prueba;
-   la carga de demostración es posterior y no forma parte de esa transacción.
+2. Desde la versión candidata ejecutar `npm run db:migrate`. Solo aplica
+   `database/migrations/20261101_reajustes.sql`: conserva roles y estados anteriores,
+   amplía los CHECK y crea las tres tablas de correcciones y despacho con RLS y
+   permisos revocados. No carga semillas ni actualiza usuarios, contratos, pagos o
+   fotografías. La validación final ocurre dentro de la transacción; un fallo
+   revierte todos los cambios. `db:init` y `db:portal` siguen disponibles para una
+   preparación explícita distinta; no son el mecanismo automático de esta versión.
 3. La preparación serializa con un bloqueo asesor, limita espera de bloqueos a
    10 segundos y sentencias a 60 segundos. Si vence un límite, conservar el error,
    revisar la transacción que bloquea y repetir el mismo comando tras resolverlo.
@@ -147,7 +150,14 @@ demuestra que el respaldo sea recuperable.
 4. Ejecutar `npm run db:verify`. Después reiniciar la aplicación candidata y
    comprobar `/api/health`, catálogo, contratos, evidencias y programación. Repetir
    la preparación no debe duplicar registros ni cambiar importes históricos.
-5. Publicar solo tras la revisión del equipo. Esta tarea no autoriza despliegue.
+5. Al fusionar el PR a `main`, GitHub Actions comprueba dependencias, sintaxis y
+   pruebas y solicita el despliegue del mismo commit. Render conserva
+   `startCommand: npm start`; `prestart` usa la conexión privada del servicio y
+   prepara la base antes de abrir el puerto. Un error devuelve código distinto de
+   cero e impide iniciar la nueva versión. Con el esquema actualizado, los
+   siguientes arranques omiten DDL. No se necesitan secretos de Supabase en Actions
+   ni cambios de variables o de plan en Render. Ejecutar directamente
+   `node backend/server.mjs` omite `prestart`: usar `npm start` en producción.
 
 La expansión añade tablas/columnas y conserva los valores de roles y estados
 anteriores. El código anterior al ajuste puede leer las columnas antiguas,

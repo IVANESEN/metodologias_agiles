@@ -25,6 +25,12 @@ test('db:portal actualiza una base de producción anterior sin perder datos', as
   await embedded.exec("SELECT set_config('search_path', 'constructora_private, pg_catalog', false)");
   // Estado de la base antes del portal: dos roles, sin tablas nuevas ni tasas, con un contrato real.
   await embedded.exec(`
+    -- El fixture también retira la ampliación posterior de cuentas y sus FK antes del portal antiguo.
+    ALTER TABLE pago DROP CONSTRAINT pago_destino_check,
+      DROP COLUMN tipo_movimiento, DROP COLUMN pedido_id, DROP COLUMN proveedor_id,
+      DROP COLUMN metodo, DROP COLUMN referencia, DROP COLUMN registrado_por;
+    ALTER TABLE pago ALTER COLUMN contrato_id SET NOT NULL;
+    ALTER TABLE contrato DROP COLUMN pedido_id;
     DROP TABLE pedido_evento, pedido_item, pedido, configuracion, auditoria;
     ALTER TABLE maquinaria DROP COLUMN estado_publicacion, DROP COLUMN imagenes, DROP COLUMN proveedor_id;
     ALTER TABLE usuario DROP COLUMN empresa, DROP CONSTRAINT usuario_rol_check;

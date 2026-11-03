@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import { assertPostgresReady, migratePostgresDatabase } from './postgres-preparation.mjs';
+import { migrateCuentas } from './cuentas-migracion.mjs';
+import { registerMovement } from './cuentas.mjs';
 
 const DBTEST_NAME = 'constructora_migration_test';
 const DBTEST_SCHEMA = 'constructora_private';
@@ -54,7 +56,7 @@ function dbtestAdapter(client, { failAfterDdl = false, stats = { ddl: 0, injecte
     async exec(sql) {
       const result = await dbtestQuery(client, sql);
       if (/\b(?:CREATE|ALTER|DROP|REVOKE|GRANT)\s/i.test(sql)) stats.ddl += 1;
-      if (failAfterDdl && /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+recepcion_correccion\b/i.test(sql)) {
+      if (failAfterDdl && /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+recepcion_correccion\b|ADD\s+CONSTRAINT\s+pago_destino_check\b/i.test(sql)) {
         stats.injected = true;
         throw new Error('Fallo controlado de prueba después del DDL y antes del commit.');
       }
@@ -233,6 +235,28 @@ test('Migración de despliegue en PostgreSQL real aislado', {
     assert.deepEqual(repeated, { migration: '20261101_reajustes', applied: false, createdTables: [] });
     assert.equal(stats.ddl, 0, 'Un esquema listo no debe volver a adquirir bloqueos DDL.');
     assert.deepEqual(await dbtestSnapshot(first), original);
+  });
+  await t.test('cuentas migra una vez en dos conexiones y serializa los pagos en PostgreSQL real', async () => {
+    const history = (await dbtestQuery(first,'SELECT id,contrato_id,monto,creado_en FROM pago ORDER BY id')).rows;
+    const failed = { ddl:0,injected:false };
+    await assert.rejects(migrateCuentas(dbtestAdapter(first,{failAfterDdl:true,stats:failed})));
+    assert.equal(failed.injected,true);
+    assert.equal((await dbtestQuery(first,"SELECT column_name FROM information_schema.columns WHERE table_schema='constructora_private' AND table_name='pago' AND column_name='pedido_id'")).rows.length,0);
+    const outcomes = await Promise.all([migrateCuentas(dbtestAdapter(first)),migrateCuentas(dbtestAdapter(second))]);
+    assert.deepEqual(outcomes.map(r=>r.applied).sort(),[false,true]);
+    assert.deepEqual((await dbtestQuery(first,'SELECT id,contrato_id,monto,creado_en FROM pago ORDER BY id')).rows,history);
+    const admin={id:'00000000-0000-4000-8000-000000000001',rol:'admin'};
+    const common={origen:'CONTRATO',operacion_id:'00000000-0000-4000-8000-000000000002',
+      tipo_movimiento:'COBRO_CLIENTE',monto:'100',metodo:'TRANSFERENCIA'};
+    // El contrato histórico de 200 ya tiene un abono de 75.25: solo cabe un pago de 100.
+    const results=await Promise.allSettled([
+      registerMovement(dbtestAdapter(first),admin,{...common,id:'00000000-0000-4000-8000-000000000901',referencia:'PG-1'}),
+      registerMovement(dbtestAdapter(second),admin,{...common,id:'00000000-0000-4000-8000-000000000902',referencia:'PG-2'}),
+    ]);
+    assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+    assert.equal(results.find(r=>r.status==='rejected').reason.code,'PAYMENT_EXCEEDS_BALANCE');
+    assert.equal(Number((await dbtestQuery(first,'SELECT SUM(monto) AS total FROM pago')).rows[0].total),175.25);
+    assert.deepEqual(await migrateCuentas(dbtestAdapter(first)),{applied:false});
   });
   assert.equal(idleFailure, false, 'El PostgreSQL de prueba no debe perder conexiones inactivas.');
 });

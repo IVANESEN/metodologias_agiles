@@ -48,7 +48,11 @@ async function previousDatabase(embedded) {
 async function snapshot(embedded) {
   const result = {};
   for (const name of ['maquinaria', 'usuario', 'contrato', 'contrato_maquinaria', 'pago', 'recepcion_maquinaria']) {
-    result[name] = (await embedded.query(`SELECT * FROM constructora_private.${name} ORDER BY 1`)).rows;
+    // Comparar todas las columnas históricas, sin confundir columnas nuevas con pérdida de datos.
+    const query = name === 'pago' ? 'SELECT id,contrato_id,monto,creado_en FROM constructora_private.pago ORDER BY id'
+      : name === 'contrato' ? "SELECT to_jsonb(c)-'pedido_id' AS registro FROM constructora_private.contrato c ORDER BY id"
+        : `SELECT * FROM constructora_private.${name} ORDER BY 1`;
+    result[name] = (await embedded.query(query)).rows;
   }
   return result;
 }

@@ -11,7 +11,8 @@ export async function ordersList(ctx) {
   const root = ctx.view;
   const rol = ctx.user.rol;
   const staff = ctx.can('pedidos.gestionar');
-  const title = rol === 'cliente' ? 'Mis pedidos' : rol === 'proveedor' ? 'Pedidos con tus equipos' : 'Pedidos';
+  const empresa = ctx.query.get('empresa') === 'true' && staff;
+  const title = empresa ? 'Alquileres de Constructora El Salvador' : rol === 'cliente' ? 'Mis pedidos' : rol === 'proveedor' ? 'Pedidos con tus equipos' : 'Pedidos';
   ctx.setTitle(title);
   const state = { estado: ctx.query.get('estado') || '', q: '' };
   root.innerHTML = `
@@ -19,7 +20,7 @@ export async function ordersList(ctx) {
       <p>${rol === 'cliente' ? 'Sigue cada renta y compra desde la solicitud hasta la entrega en tu obra.'
         : rol === 'proveedor' ? 'Montos de tus equipos antes de la comisión de la plataforma. Abre un pedido para ver tu liquidación.'
           : 'Aprueba, despacha y cierra pedidos. Cada cambio queda registrado y el cliente lo ve al instante.'}</p></div>
-      ${rol === 'cliente' ? `<a class="btn" href="#/catalogo">${icon('plus', 'icon icon-sm')}Nuevo pedido</a>` : ''}</div>
+      ${ctx.can('pedidos.crear') ? `<a class="btn" href="#/catalogo">${icon('plus', 'icon icon-sm')}Nuevo pedido</a>` : ''}</div>
     <div class="row-between wrap">
       <div class="chips" role="group" aria-label="Filtrar por estado">${FILTERS.map(([value, label]) =>
         `<button class="chip" type="button" data-estado="${value}" aria-pressed="${state.estado === value}">${esc(label)}</button>`).join('')}</div>
@@ -48,7 +49,10 @@ export async function ordersList(ctx) {
   }
   async function load() {
     results.innerHTML = '<div class="card-body"><div class="skeleton" style="height:220px"></div></div>';
-    orders = await api(`/api/portal/pedidos${state.estado ? `?estado=${state.estado}` : ''}`);
+    const params = new URLSearchParams();
+    if (state.estado) params.set('estado', state.estado);
+    if (empresa) params.set('empresa', 'true');
+    orders = await api(`/api/portal/pedidos?${params}`);
     if (ctx.isCurrent()) paint();
   }
   root.addEventListener('click', (event) => {
@@ -56,7 +60,10 @@ export async function ordersList(ctx) {
     if (chip) {
       state.estado = chip.dataset.estado;
       root.querySelectorAll('[data-estado]').forEach((b) => b.setAttribute('aria-pressed', String(b === chip)));
-      history.replaceState(null, '', `#/pedidos${state.estado ? `?estado=${state.estado}` : ''}`);
+      const params = new URLSearchParams();
+      if (state.estado) params.set('estado', state.estado);
+      if (empresa) params.set('empresa', 'true');
+      history.replaceState(null, '', `#/pedidos?${params}`);
       load().catch((error) => toast(error.message, 'error'));
     }
     const row = event.target.closest('[data-href]');

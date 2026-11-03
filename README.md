@@ -1,6 +1,8 @@
 
 # Constructora El Salvador
 
+Estados de cuenta: administración separa cobros y pagos a proveedores, cada proveedor consulta su saldo y los empleados gestionan alquileres de Constructora. La ampliación reutiliza las tablas actuales y se prepara con la migración registrada `20261102_estados_cuenta`. Ver [alcance, permisos y migración](doc/ESTADOS_CUENTA_EMPRESA.md).
+
 **Sprint 4:** portal multirrol (cliente, proveedor, empleado y administración) con tienda,
 cotizador, pedidos, alta de productos de proveedores, tasas configurables y auditoría.
 Ver [SPRINT4_PORTAL.md](SPRINT4_PORTAL.md) para pantallas, cuentas de prueba,

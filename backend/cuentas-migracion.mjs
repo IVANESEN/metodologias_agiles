@@ -7,6 +7,10 @@ const normalize = text => text.replace(/::text/g,'').replace(/[\s()]/g,'').toLow
 const shape = normalize(`CHECK ((tipo_movimiento = 'COBRO_CLIENTE' AND proveedor_id IS NULL AND
   ((contrato_id IS NOT NULL AND pedido_id IS NULL) OR (contrato_id IS NULL AND pedido_id IS NOT NULL)))
   OR (tipo_movimiento = 'PAGO_PROVEEDOR' AND contrato_id IS NULL AND pedido_id IS NOT NULL AND proveedor_id IS NOT NULL))`);
+const supplierShape = normalize(`CHECK (
+  ((contrato_id IS NOT NULL AND pedido_id IS NULL) OR (contrato_id IS NULL AND pedido_id IS NOT NULL))
+  AND ((tipo_movimiento = 'COBRO_CLIENTE' AND proveedor_id IS NULL)
+    OR (tipo_movimiento = 'PAGO_PROVEEDOR' AND proveedor_id IS NOT NULL)))`);
 
 export function cuentasPreparadas(inventory) {
   const table = name => inventory.appTables.find(t => t.name === name);
@@ -19,11 +23,64 @@ export function cuentasPreparadas(inventory) {
   return table('pedido').columns.some(c => c.name === 'es_empresa' && c.notNull && c.defaultValue === 'false') &&
     table('pago').columns.some(c => c.name === 'contrato_id' && !c.notNull) &&
     table('pago').columns.some(c => c.name === 'tipo_movimiento' && c.notNull && String(c.defaultValue).includes("'COBRO_CLIENTE'")) &&
-    table('pago').constraints.some(c => c.name === 'pago_destino_check' && c.validated && normalize(c.definition) === shape) &&
+    table('pago').constraints.some(c => c.name === 'pago_destino_check' && c.validated && [shape,supplierShape].includes(normalize(c.definition))) &&
     table('pago').constraints.some(c => c.name === 'pago_metodo_check' && c.validated &&
       [...c.definition.matchAll(/'([^']+)'/g)].map(m=>m[1]).sort().join(',') === 'CHEQUE,EFECTIVO,TRANSFERENCIA') &&
     [['pago','pedido_id','pedido'],['pago','proveedor_id','usuario'],['pago','registrado_por','usuario'],['contrato','pedido_id','pedido']].every(args=>fk(...args)) &&
     table('contrato').constraints.some(c=>c.type==='u' && c.columns.length===1 && c.columns[0]==='pedido_id');
+}
+
+export function contratosProveedorPreparados(inventory) {
+  const detail = inventory.appTables.find(t => t.name === 'contrato_maquinaria');
+  const payment = inventory.appTables.find(t => t.name === 'pago');
+  return cuentasPreparadas(inventory) &&
+    detail?.columns.some(c => c.name === 'proveedor_id' && c.type === 'uuid' && !c.notNull) &&
+    detail.constraints.some(c => c.name === 'contrato_maquinaria_proveedor_fk' && c.type === 'f' && c.validated &&
+      c.columns.join(',') === 'proveedor_id' && c.referenceTable === 'usuario' &&
+      c.referenceSchema === detail.schema && c.referenceColumns.join(',') === 'id' && c.onDelete === 'r') &&
+    payment.constraints.some(c => c.name === 'pago_destino_check' && c.validated && normalize(c.definition) === supplierShape);
+}
+
+export async function applyContratosProveedorSchema(tx) {
+  const { rows } = await tx.query(`SELECT 1 FROM pg_constraint
+    WHERE conrelid='contrato_maquinaria'::regclass AND conname='contrato_maquinaria_proveedor_fk'`);
+  if (rows.length) return false;
+  const invalid = await tx.query(`SELECT m.id FROM maquinaria m LEFT JOIN usuario u ON u.id=m.proveedor_id
+    WHERE m.proveedor_id IS NOT NULL AND (u.id IS NULL OR u.rol <> 'proveedor') LIMIT 1`);
+  if (invalid.rows.length) throw new Error('Revisa el propietario de la maquinaria antes de migrar.');
+  await tx.exec(await readFile(new URL('../database/migrations/20261102_contratos_proveedores.sql',import.meta.url),'utf8'));
+  return true;
+}
+
+export async function migrateContratosProveedor(database) {
+  const { inspectPostgresDatabase, assertPostgresReady, PostgresPreparationError } = await import('./postgres-preparation.mjs');
+  try {
+    const verified = await database.verifyConnection();
+    if (!(database.renderInternal && verified.privateNetwork) && !(verified.tls?.encrypted && verified.tls.authorized)) {
+      throw new PostgresPreparationError('DATABASE_TLS_NOT_VERIFIED','La migración requiere TLS verificado.');
+    }
+    if (database.schema !== 'constructora_private') throw new PostgresPreparationError('UNSUPPORTED_MIGRATION_SCHEMA','Revisa el esquema antes de migrar.');
+    const before = await assertPostgresReady(database);
+    if (contratosProveedorPreparados(before)) return { applied:false };
+    return await database.transaction(async tx => {
+      await tx.query("SELECT set_config('lock_timeout','10s',true)");
+      await tx.query("SELECT set_config('statement_timeout','60s',true)");
+      await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))',['constructora-init:constructora_private']);
+      const scoped = {...tx,schema:database.schema,requiresDataApiReview:database.requiresDataApiReview};
+      const inventory = await assertPostgresReady(scoped);
+      if (contratosProveedorPreparados(inventory)) return {applied:false};
+      if (!cuentasPreparadas(inventory) || inventory.appTables.find(t=>t.name==='contrato_maquinaria')?.columns.some(c=>c.name==='proveedor_id')) {
+        throw new PostgresPreparationError('INCOMPATIBLE_EXISTING_TABLES','La migración de proveedores requiere las cuentas completas y ninguna ampliación parcial.');
+      }
+      const applied = await applyContratosProveedorSchema(tx);
+      if (!contratosProveedorPreparados(await inspectPostgresDatabase(scoped))) throw new Error('Incomplete supplier migration');
+      await assertPostgresReady(scoped);
+      return {applied};
+    });
+  } catch(error) {
+    if (error instanceof PostgresPreparationError) throw error;
+    throw new PostgresPreparationError('DATABASE_MIGRATION_FAILED','No se pudo migrar la cuenta de proveedores; se revirtió la transacción. Revisa propietarios y estructura.');
+  }
 }
 
 export async function applyCuentasSchema(tx) {

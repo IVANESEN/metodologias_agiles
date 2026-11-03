@@ -21,3 +21,19 @@ test('la vista de empleado presenta cuentas de empresa sin acciones administrati
   assert.ok(view.innerHTML.includes('Cuentas por pagar'));assert.ok(!view.innerHTML.includes('data-pay='));
  }finally{globalThis.fetch=previous;}
 });
+
+test('el proveedor ve a Constructora como deudor y la conciliación impide mostrar otro botón de pago',async()=>{
+ assert.ok(!accountRows([{...row,requiere_conciliacion:true}],true).includes('data-pay='));
+ const previous=globalThis.fetch;
+ globalThis.fetch=async()=>({ok:true,status:200,headers:{get:()=> 'application/json'},json:async()=>({cobros:[],pagos:[{...row,contraparte:'Constructora El Salvador',requiere_conciliacion:true}],
+   resumen:{cobros:{total:0,abonado:0,saldo:0},pagos:{total:100,abonado:25,saldo:75}}})});
+ try {
+   const view={innerHTML:'',addEventListener(){}};
+   await accountsView({view,user:{rol:'proveedor'},can:()=>false,isCurrent:()=>true,setTitle(){}});
+   assert.ok(view.innerHTML.includes('Pagos pendientes de recibir'));
+   assert.ok(view.innerHTML.includes('Constructora El Salvador te debe'));
+   assert.ok(view.innerHTML.includes('son provisionales'));
+   assert.ok(!view.innerHTML.includes('data-reconcile='));
+   assert.ok(!view.innerHTML.includes('Cuentas por cobrar'));
+ }finally{globalThis.fetch=previous;}
+});

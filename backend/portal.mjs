@@ -11,7 +11,7 @@ import { FORMAS_PAGO } from './contrato-legal.mjs';
 import { hoyElSalvador } from './contratos-por-vencer.mjs';
 import { dateRangesOverlap, occupiedRanges, rentalEligibility, rentalEligibilitySql, unoccupiedSql } from './alquiler-reglas.mjs';
 import { validarFotografia } from './imagenes.mjs';
-import { readAccounts, registerMovement, linkContract } from './cuentas.mjs';
+import { readAccounts, registerMovement, linkContract, reconcileContract } from './cuentas.mjs';
 
 const MAX_PRODUCT_BODY_BYTES = 7_400_000;
 const MAX_IMAGE_BYTES = 1_100_000;
@@ -790,6 +790,7 @@ export async function handlePortalRoute(context) {
     case 'portal.cuentas': return json(response, 200, await readAccounts(database, user));
     case 'portal.cuentas.movimientos': return json(response, 200, await registerMovement(database, user, await readJson(request)));
     case 'portal.cuentas.vincular': return json(response, 200, await linkContract(database, user, await readJson(request)));
+    case 'portal.cuentas.conciliar': return json(response, 200, await reconcileContract(database, user, await readJson(request)));
     case 'portal.resumen': return json(response, 200, await dashboard(database, user));
     case 'portal.reportes': return json(response, 200, await reports(database));
     case 'portal.configuracion.consultar': {

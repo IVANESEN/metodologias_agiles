@@ -52,6 +52,7 @@ const RUTAS = Object.freeze([
   { operacion: 'portal.cuentas', metodo: 'GET', patron: /^\/api\/portal\/cuentas$/, permiso: 'cuentas.consultar' },
   { operacion: 'portal.cuentas.movimientos', metodo: 'POST', patron: /^\/api\/portal\/cuentas\/movimientos$/, permiso: 'cuentas.registrar' },
   { operacion: 'portal.cuentas.vincular', metodo: 'POST', patron: /^\/api\/portal\/cuentas\/vincular$/, permiso: 'cuentas.registrar' },
+  { operacion: 'portal.cuentas.conciliar', metodo: 'POST', patron: /^\/api\/portal\/cuentas\/conciliar$/, permiso: 'cuentas.registrar' },
   { operacion: 'maquinaria.consultar', metodo: 'GET', patron: /^\/api\/maquinaria$/, permiso: 'maquinaria.consultar' },
   { operacion: 'reservas.consultar', metodo: 'GET', patron: /^\/api\/reservas\/ocupadas$/, permiso: 'maquinaria.consultar' },
   { operacion: 'contratos.crear', metodo: 'POST', patron: /^\/api\/contratos$/, permiso: 'contratos.crear' },

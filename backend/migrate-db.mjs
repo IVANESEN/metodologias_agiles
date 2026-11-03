@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import { createDatabase, safeDatabaseError } from './database.mjs';
 import { migratePostgresDatabase, PostgresPreparationError } from './postgres-preparation.mjs';
-import { migrateCuentas } from './cuentas-migracion.mjs';
+import { migrateCuentas, migrateContratosProveedor } from './cuentas-migracion.mjs';
 
 export async function migrateDatabase({ connectionString = process.env.DATABASE_URL,
   production = process.env.NODE_ENV === 'production', log = console.info } = {}) {
@@ -13,6 +13,8 @@ export async function migrateDatabase({ connectionString = process.env.DATABASE_
   try {
     const result = await migratePostgresDatabase(database);
     const cuentas = await migrateCuentas(database);
+    const proveedores = await migrateContratosProveedor(database);
+    log(proveedores.applied ? 'Contratos de proveedores preparados; abonos históricos conservados para revisión.' : 'Cuentas de proveedores preparadas.');
     log(cuentas.applied ? 'Migración de estados de cuenta aplicada; pagos históricos conservados.' : 'Estados de cuenta preparados.');
     log(result.applied
       ? 'Migración 20261101_reajustes aplicada y verificada; datos históricos conservados.'

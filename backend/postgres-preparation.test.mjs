@@ -384,6 +384,8 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
   await t.test('actualización revisada conserva contratos históricos y sólo rellena detalle ausente', async () => {
     // Reproduce the pre-payment schema; no historical payment can be inferred.
     await embedded.exec('DROP TABLE constructora_private.pago;');
+    // La instantánea de proveedor tampoco existía antes del módulo de pagos.
+    await embedded.exec('ALTER TABLE constructora_private.contrato_maquinaria DROP COLUMN proveedor_id;');
     await embedded.exec(`INSERT INTO constructora_private.maquinaria
       (id,nombre,tipo,descripcion,tarifa_diaria,disponible) VALUES (77,'Nombre nuevo','Excavadora','Datos propios',1100,true);
       INSERT INTO constructora_private.contrato

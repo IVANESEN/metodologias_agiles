@@ -257,7 +257,9 @@ async function contractAccount(database, id) {
 
 export async function findPendingAccounts(database) {
   const { rows } = await database.query(`${ACCOUNT_QUERY}
-    WHERE c.pedido_id IS NULL GROUP BY c.id HAVING c.total > COALESCE(SUM(p.monto), 0) ORDER BY c.creado_en, c.id`);
+    WHERE c.pedido_id IS NULL AND NOT EXISTS
+      (SELECT 1 FROM contrato_maquinaria cm WHERE cm.contrato_id=c.id AND cm.proveedor_id IS NOT NULL)
+    GROUP BY c.id HAVING c.total > COALESCE(SUM(p.monto), 0) ORDER BY c.creado_en, c.id`);
   return rows.map(accountNumbers);
 }
 
@@ -394,6 +396,9 @@ export async function savePayment(database, contractId, input) {
     const locked = await tx.query('SELECT id,pedido_id FROM contrato WHERE id = $1 FOR UPDATE', [contractId]);
     if (!locked.rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
     if (locked.rows[0].pedido_id) throw new ApiError(409, 'CONTRACT_LINKED', 'Registra el cobro desde el estado de cuenta del pedido vinculado.');
+    if ((await tx.query('SELECT 1 FROM contrato_maquinaria WHERE contrato_id=$1 AND proveedor_id IS NOT NULL LIMIT 1',[contractId])).rows.length) {
+      throw new ApiError(409,'SUPPLIER_CONTRACT','Registra el pago al proveedor desde el estado de cuenta. Este alquiler no es una cuenta por cobrar de Constructora.');
+    }
     const existing = await tx.query(
       'SELECT id, contrato_id, monto, creado_en::text FROM pago WHERE id = $1', [input.id],
     );
@@ -463,8 +468,8 @@ export async function saveContract(database, input) {
         input.operador, input.operador_documento, input.seguro, input.forma_pago, input.condiciones_especiales],
     );
     await tx.query(
-      `INSERT INTO contrato_maquinaria (contrato_id, maquinaria_id, maquinaria_nombre, tarifa_diaria)
-       SELECT $1::uuid, id, nombre, tarifa_diaria FROM maquinaria
+      `INSERT INTO contrato_maquinaria (contrato_id, maquinaria_id, maquinaria_nombre, tarifa_diaria, proveedor_id)
+       SELECT $1::uuid, id, nombre, tarifa_diaria, proveedor_id FROM maquinaria
        WHERE id = ANY($2::integer[]) ORDER BY id`,
       [id, input.maquinaria_ids],
     );

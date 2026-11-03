@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import { assertPostgresReady, migratePostgresDatabase } from './postgres-preparation.mjs';
-import { migrateCuentas } from './cuentas-migracion.mjs';
+import { migrateCuentas, migrateContratosProveedor, contratosProveedorPreparados } from './cuentas-migracion.mjs';
 import { registerMovement } from './cuentas.mjs';
 
 const DBTEST_NAME = 'constructora_migration_test';
@@ -245,6 +245,24 @@ test('Migración de despliegue en PostgreSQL real aislado', {
     const outcomes = await Promise.all([migrateCuentas(dbtestAdapter(first)),migrateCuentas(dbtestAdapter(second))]);
     assert.deepEqual(outcomes.map(r=>r.applied).sort(),[false,true]);
     assert.deepEqual((await dbtestQuery(first,'SELECT id,contrato_id,monto,creado_en FROM pago ORDER BY id')).rows,history);
+    await dbtestQuery(first,`INSERT INTO usuario(id,correo,nombre,clave_hash,rol)
+      VALUES('00000000-0000-4000-8000-000000000801','proveedor@example.test','Proveedor','hash-local','proveedor');
+      INSERT INTO maquinaria(id,nombre,tipo,descripcion,tarifa_diaria,proveedor_id)
+      VALUES(102,'Equipo proveedor','Excavadora','Equipo de pruebas',100,'00000000-0000-4000-8000-000000000801');
+      INSERT INTO contrato(id,maquinaria_id,maquinaria_nombre,cliente,fecha_inicio,fecha_fin,dias,tarifa_diaria,total)
+      VALUES('00000000-0000-4000-8000-000000000802',102,'Equipo proveedor','Constructora El Salvador','2039-01-01','2039-01-01',1,100,100);
+      INSERT INTO contrato_maquinaria(contrato_id,maquinaria_id,maquinaria_nombre,tarifa_diaria)
+      VALUES('00000000-0000-4000-8000-000000000802',102,'Equipo proveedor',100);`);
+    const failedProvider = {ddl:0,injected:false};
+    await assert.rejects(migrateContratosProveedor(dbtestAdapter(first,{failAfterDdl:true,stats:failedProvider})));
+    assert.equal(failedProvider.injected,true,'El fallo ocurre después del SQL real de proveedores.');
+    assert.equal((await dbtestQuery(first,"SELECT column_name FROM information_schema.columns WHERE table_schema='constructora_private' AND table_name='contrato_maquinaria' AND column_name='proveedor_id'")).rows.length,0);
+    const suppliers = await Promise.all([migrateContratosProveedor(dbtestAdapter(first)),migrateContratosProveedor(dbtestAdapter(second))]);
+    assert.deepEqual(suppliers.map(r=>r.applied).sort(),[false,true]);
+    assert.equal(contratosProveedorPreparados(await assertPostgresReady(dbtestAdapter(first))),true);
+    assert.deepEqual(await migrateContratosProveedor(dbtestAdapter(first)),{applied:false});
+    assert.deepEqual((await dbtestQuery(first,'SELECT id,contrato_id,monto,creado_en FROM pago ORDER BY id')).rows,history);
+    assert.equal((await dbtestQuery(first,'SELECT proveedor_id FROM contrato_maquinaria WHERE maquinaria_id=102')).rows[0].proveedor_id,'00000000-0000-4000-8000-000000000801');
     const admin={id:'00000000-0000-4000-8000-000000000001',rol:'admin'};
     const common={origen:'CONTRATO',operacion_id:'00000000-0000-4000-8000-000000000002',
       tipo_movimiento:'COBRO_CLIENTE',monto:'100',metodo:'TRANSFERENCIA'};
@@ -256,6 +274,14 @@ test('Migración de despliegue en PostgreSQL real aislado', {
     assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
     assert.equal(results.find(r=>r.status==='rejected').reason.code,'PAYMENT_EXCEEDS_BALANCE');
     assert.equal(Number((await dbtestQuery(first,'SELECT SUM(monto) AS total FROM pago')).rows[0].total),175.25);
+    const supplier={...common,operacion_id:'00000000-0000-4000-8000-000000000802',tipo_movimiento:'PAGO_PROVEEDOR',
+      proveedor_id:'00000000-0000-4000-8000-000000000801',monto:'70'};
+    const payouts=await Promise.allSettled([
+      registerMovement(dbtestAdapter(first),admin,{...supplier,id:'00000000-0000-4000-8000-000000000903',referencia:'PROV-1'}),
+      registerMovement(dbtestAdapter(second),admin,{...supplier,id:'00000000-0000-4000-8000-000000000904',referencia:'PROV-2'}),
+    ]);
+    assert.equal(payouts.filter(r=>r.status==='fulfilled').length,1);
+    assert.equal(payouts.find(r=>r.status==='rejected').reason.code,'PAYMENT_EXCEEDS_BALANCE');
     assert.deepEqual(await migrateCuentas(dbtestAdapter(first)),{applied:false});
   });
   assert.equal(idleFailure, false, 'El PostgreSQL de prueba no debe perder conexiones inactivas.');

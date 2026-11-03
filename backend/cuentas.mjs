@@ -44,8 +44,26 @@ async function orderAccount(db, order, tipo, provider) {
     es_empresa: order.es_empresa, bruto, comision, total });
 }
 
-async function contractAccount(db, contract) {
+async function contractProviders(db, contract) {
+  const {rows} = await db.query(`SELECT cm.proveedor_id,COALESCE(NULLIF(u.empresa,''),u.nombre) AS nombre,
+    SUM(cm.tarifa_diaria)*$2::integer AS total FROM contrato_maquinaria cm
+    JOIN usuario u ON u.id=cm.proveedor_id WHERE cm.contrato_id=$1
+    GROUP BY cm.proveedor_id,u.empresa,u.nombre ORDER BY cm.proveedor_id`,[contract.id,contract.dias]);
+  return rows;
+}
+
+async function contractAccount(db, contract, provider) {
   if (contract.pedido_id) fail(409, 'CONTRACT_LINKED', 'Registra el cobro en el pedido vinculado para evitar duplicarlo.');
+  const providers = await contractProviders(db,contract);
+  if (provider) {
+    const owner = providers.find(p=>p.proveedor_id===provider);
+    if (!owner) fail(404,'PROVIDER_ACCOUNT_NOT_FOUND','El proveedor no participa en este contrato.');
+    const pending = (await db.query(`SELECT id FROM pago WHERE contrato_id=$1 AND tipo_movimiento='COBRO_CLIENTE' LIMIT 1`,[contract.id])).rows.length>0;
+    return movementList(db,{origen:'CONTRATO',operacion_id:contract.id,numero:`CON-${contract.id.slice(0,8)}`,
+      tipo_movimiento:'PAGO_PROVEEDOR',proveedor_id:provider,contraparte:owner.nombre,
+      es_empresa:true,total:owner.total,requiere_conciliacion:pending});
+  }
+  if (providers.length) fail(409,'SUPPLIER_CONTRACT','Este alquiler genera un pago al proveedor, no un cobro a Constructora.');
   return movementList(db, { origen: 'CONTRATO', operacion_id: contract.id,
     numero: `CON-${contract.id.slice(0, 8)}`, tipo_movimiento: 'COBRO_CLIENTE',
     proveedor_id: null, contraparte: contract.cliente, total: contract.total });
@@ -53,7 +71,7 @@ async function contractAccount(db, contract) {
 
 export async function readAccounts(db, user) {
   guardPermission({ user }, 'cuentas.consultar');
-  const cobros = [], pagos = [];
+  const cobros = [], pagos = [], conciliaciones = [];
   const values = [ACTIVOS];
   let scope = '';
   if (user.rol === 'empleado') scope = ' AND p.es_empresa';
@@ -70,14 +88,27 @@ export async function readAccounts(db, user) {
     user.rol === 'proveedor' ? [order.id, user.id] : [order.id]);
     for (const provider of providers) pagos.push(await orderAccount(db, order, 'PAGO_PROVEEDOR', provider.proveedor_id));
   }
-  if (user.rol === 'admin') {
-    const { rows } = await db.query('SELECT id,cliente,total,pedido_id FROM contrato WHERE pedido_id IS NULL ORDER BY creado_en DESC,id');
-    for (const contract of rows) cobros.push(await contractAccount(db, contract));
+  const { rows: contracts } = await db.query(`SELECT c.* FROM contrato c WHERE c.pedido_id IS NULL
+    ${user.rol==='proveedor' ? 'AND EXISTS (SELECT 1 FROM contrato_maquinaria cm WHERE cm.contrato_id=c.id AND cm.proveedor_id=$1)' : ''}
+    ORDER BY c.creado_en DESC,c.id`,user.rol==='proveedor' ? [user.id] : []);
+  for (const contract of contracts) {
+    const providers = await contractProviders(db,contract);
+    if (!providers.length && user.rol==='admin') cobros.push(await contractAccount(db,contract));
+    for (const p of providers) {
+      if (user.rol!=='proveedor' || p.proveedor_id===user.id) pagos.push(await contractAccount(db,contract,p.proveedor_id));
+    }
+    if (user.rol==='admin' && providers.length) {
+      const {rows: movements} = await db.query(`SELECT id,monto,metodo,referencia,creado_en::text FROM pago
+        WHERE contrato_id=$1 AND tipo_movimiento='COBRO_CLIENTE' ORDER BY creado_en,id`,[contract.id]);
+      if (movements.length) conciliaciones.push({contrato_id:contract.id,numero:`CON-${contract.id.slice(0,8)}`,
+        proveedores:providers.map(p=>({id:p.proveedor_id,nombre:p.nombre})),movimientos:movements.map(m=>({...m,monto:cash(m.monto)}))});
+    }
   }
+  if (user.rol==='proveedor') for (const row of pagos) row.contraparte='Constructora El Salvador';
   const sum = rows => ({ total: cash(rows.reduce((a,r) => a+cents(r.total),0)/100),
     abonado: cash(rows.reduce((a,r) => a+cents(r.abonado),0)/100), saldo: cash(rows.reduce((a,r) => a+cents(r.saldo),0)/100) });
   return { alcance: user.rol === 'proveedor' ? 'PROPIO' : user.rol === 'empleado' ? 'EMPRESA' : 'ADMINISTRACION',
-    cobros, pagos, resumen: { cobros: sum(cobros), pagos: sum(pagos) } };
+    cobros, pagos, conciliaciones, resumen: { cobros: sum(cobros), pagos: sum(pagos) } };
 }
 
 function validateMovement(body) {
@@ -92,7 +123,7 @@ function validateMovement(body) {
       !body.referencia.trim() || body.referencia.trim().length > 120 || /[\x00-\x1f\x7f]/.test(body.referencia)) {
     fail(400, 'VALIDATION_ERROR', 'Indica método y referencia del comprobante (máximo 120 caracteres).');
   }
-  if (body.tipo_movimiento === 'PAGO_PROVEEDOR' ? !validId(body.proveedor_id) || body.origen !== 'PEDIDO' : body.proveedor_id != null) {
+  if (body.tipo_movimiento === 'PAGO_PROVEEDOR' ? !validId(body.proveedor_id) : body.proveedor_id != null) {
     fail(400, 'VALIDATION_ERROR', 'Revisa el proveedor y la clase de movimiento.');
   }
   return { ...body, id: body.id.toLowerCase(), operacion_id: body.operacion_id.toLowerCase(),
@@ -118,7 +149,8 @@ export async function registerMovement(db, user, body) {
     }
     const account = table === 'pedido'
       ? await orderAccount(tx, locked.rows[0], input.tipo_movimiento, input.proveedor_id)
-      : await contractAccount(tx, locked.rows[0]);
+      : await contractAccount(tx, locked.rows[0], input.proveedor_id);
+    if (account.requiere_conciliacion) fail(409,'RECONCILIATION_REQUIRED','Confirma primero a qué proveedor pertenecen los abonos históricos de este contrato.');
     if (input.tipo_movimiento !== account.tipo_movimiento || cents(input.monto) > cents(account.saldo)) {
       fail(409, 'PAYMENT_EXCEEDS_BALANCE', 'El movimiento supera el saldo pendiente o no corresponde a esta cuenta.');
     }
@@ -142,6 +174,7 @@ export async function linkContract(db, user, body) {
     const p = (await tx.query('SELECT * FROM pedido WHERE id=$1 FOR UPDATE',[body.pedido_id])).rows[0];
     const c = (await tx.query('SELECT * FROM contrato WHERE id=$1 FOR UPDATE',[body.contrato_id])).rows[0];
     if (!p || !c) fail(404,'ACCOUNT_NOT_FOUND','No se encontró el pedido o contrato.');
+    if ((await contractProviders(tx,c)).length) fail(409,'SUPPLIER_CONTRACT','Un contrato de alquiler de proveedores no se vincula como cobro de un cliente externo.');
     if (p.es_empresa || p.tipo === 'COMPRA') fail(409,'INVALID_LINK','Vincula únicamente un contrato de renta de un cliente externo.');
     if (c.pedido_id === p.id) return { vinculado: true };
     if (c.pedido_id || (await tx.query('SELECT id FROM contrato WHERE pedido_id=$1',[p.id])).rows.length) fail(409,'INVALID_LINK','La operación ya tiene otra vinculación.');
@@ -152,5 +185,40 @@ export async function linkContract(db, user, body) {
     await tx.query(`INSERT INTO auditoria(id,usuario_id,accion,entidad,entidad_id,detalle)
       VALUES (gen_random_uuid(),$1,'cuenta.vincular','contrato',$2,$3::jsonb)`,[user.id,c.id,JSON.stringify({ pedido_id:p.id })]);
     return { vinculado: true };
+  });
+}
+
+// Una confirmación explícita asigna los comprobantes antiguos: no crea abonos
+// adicionales ni cambia sus importes, UUID, fechas, método o referencia.
+export async function reconcileContract(db,user,body) {
+  guardPermission({user},'cuentas.registrar');
+  if (!validId(body?.contrato_id) || body.confirmar!==true || !Array.isArray(body.asignaciones) ||
+      !body.asignaciones.length || body.asignaciones.some(a=>!validId(a?.pago_id)||!validId(a?.proveedor_id)) ||
+      new Set(body.asignaciones.map(a=>a.pago_id.toLowerCase())).size!==body.asignaciones.length) {
+    fail(400,'VALIDATION_ERROR','Confirma y asigna cada comprobante a su proveedor.');
+  }
+  return db.transaction(async tx=>{
+    const contract=(await tx.query('SELECT * FROM contrato WHERE id=$1 FOR UPDATE',[body.contrato_id])).rows[0];
+    if (!contract) fail(404,'ACCOUNT_NOT_FOUND','No se encontró el contrato.');
+    if (contract.pedido_id) fail(409,'CONTRACT_LINKED','El contrato está vinculado a un pedido.');
+    const old=(await tx.query(`SELECT * FROM pago WHERE contrato_id=$1 AND tipo_movimiento='COBRO_CLIENTE' ORDER BY id`,[contract.id])).rows;
+    const assignments=body.asignaciones.map(a=>({pago_id:a.pago_id.toLowerCase(),proveedor_id:a.proveedor_id.toLowerCase()}));
+    if (old.length!==assignments.length || old.some(p=>!assignments.some(a=>a.pago_id===p.id))) {
+      fail(409,'RECONCILIATION_CHANGED','Los comprobantes cambiaron. Vuelve a consultar la cuenta.');
+    }
+    const providers=await contractProviders(tx,contract);
+    for (const a of assignments) if (!providers.some(p=>p.proveedor_id===a.proveedor_id)) fail(404,'PROVIDER_ACCOUNT_NOT_FOUND','El proveedor no participa en el contrato.');
+    for (const p of providers) {
+      const account=await contractAccount(tx,contract,p.proveedor_id);
+      const assigned=old.filter(m=>assignments.some(a=>a.pago_id===m.id && a.proveedor_id===p.proveedor_id));
+      if (assigned.reduce((sum,m)=>sum+cents(m.monto),0)>cents(account.saldo)) {
+        fail(409,'PAYMENT_EXCEEDS_BALANCE','Los comprobantes asignados superan el saldo del proveedor. Revisa la distribución antes de confirmar.');
+      }
+    }
+    for (const a of assignments) await tx.query(`UPDATE pago SET tipo_movimiento='PAGO_PROVEEDOR',proveedor_id=$2 WHERE id=$1`,[a.pago_id,a.proveedor_id]);
+    await tx.query(`INSERT INTO auditoria(id,usuario_id,accion,entidad,entidad_id,detalle)
+      VALUES ($1,$2,'cuenta.conciliar','contrato',$3,$4::jsonb)`,[randomUUID(),user.id,contract.id,
+      JSON.stringify({anteriores:old,asignaciones:assignments})]);
+    return {conciliado:true};
   });
 }

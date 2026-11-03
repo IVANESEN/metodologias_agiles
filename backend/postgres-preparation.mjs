@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { applyCuentasSchema, cuentasPreparadas } from './cuentas-migracion.mjs';
+import { applyCuentasSchema, applyContratosProveedorSchema, cuentasPreparadas, contratosProveedorPreparados } from './cuentas-migracion.mjs';
 
 const APP_TABLES = [
   'maquinaria',
@@ -285,6 +285,9 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
   if (inventory.appTables.find(t=>t.name==='pago')?.columns.some(c=>c.name==='tipo_movimiento') && !cuentasPreparadas(inventory)) {
     fail('INCOMPATIBLE_EXISTING_TABLES','La ampliación de cuentas no tiene las columnas, claves o restricciones requeridas. Revisa el esquema antes de continuar.');
   }
+  if (inventory.appTables.find(t=>t.name==='contrato_maquinaria')?.columns.some(c=>c.name==='proveedor_id') && !contratosProveedorPreparados(inventory)) {
+    fail('INCOMPATIBLE_EXISTING_TABLES','La ampliación de contratos de proveedores está incompleta o modificada. Revisa la migración antes de continuar.');
+  }
   if (inventory.visibleDataApiSchemas.includes(schema)) {
     fail('SCHEMA_EXPOSED_TO_DATA_API', 'El esquema de la aplicación está expuesto por la Data API. Retíralo de Exposed schemas antes de continuar.');
   }
@@ -547,6 +550,7 @@ export async function applyCompatibilityConstraints(tx, schema) {
         CHECK (${column} IN (${values.map((value) => `'${value}'`).join(', ')}));`);
   }
   await applyCuentasSchema(tx);
+  await applyContratosProveedorSchema(tx);
 }
 
 /** Explicit preparation: inspect first, refuse ambiguity, retain existing rows. */

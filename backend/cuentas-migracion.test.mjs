@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
-import { migrateCuentas, cuentasPreparadas } from './cuentas-migracion.mjs';
+import { migrateCuentas, cuentasPreparadas, migrateContratosProveedor, contratosProveedorPreparados } from './cuentas-migracion.mjs';
 import { inspectPostgresDatabase, assertPostgresReady } from './postgres-preparation.mjs';
 
 test('Migración de cuentas conserva historia y revierte DDL ante fallos',async t=>{
@@ -43,6 +43,25 @@ test('Migración de cuentas conserva historia y revierte DDL ante fallos',async 
  await t.test('no acepta TLS sin verificar ni un destino diferente',async()=>{
    await assert.rejects(migrateCuentas({...adapter(),verifyConnection:async()=>({tls:{encrypted:false,authorized:false}})}),{code:'DATABASE_TLS_NOT_VERIFIED'});
    await assert.rejects(migrateCuentas({...adapter(),schema:'public'}),{code:'UNSUPPORTED_MIGRATION_SCHEMA'});
+ });
+ await t.test('proveedores revierte después del DDL real y migra una sola vez sin reclasificar pagos',async()=>{
+   const provider='00000000-0000-4000-8000-000000000003';
+   await db.query(`INSERT INTO usuario(id,correo,nombre,clave_hash,rol) VALUES($1,'proveedor@example.test','Proveedor','hash-local','proveedor')`,[provider]);
+   await db.query('UPDATE maquinaria SET proveedor_id=$1 WHERE id=1',[provider]);
+   await db.exec(`INSERT INTO contrato_maquinaria(contrato_id,maquinaria_id,maquinaria_nombre,tarifa_diaria)
+     VALUES('00000000-0000-4000-8000-000000000001',1,'Máquina',100)`);
+   await assert.rejects(migrateContratosProveedor(adapter(true)),{code:'DATABASE_MIGRATION_FAILED'});
+   assert.equal((await db.query("SELECT column_name FROM information_schema.columns WHERE table_schema='constructora_private' AND table_name='contrato_maquinaria' AND column_name='proveedor_id'")).rows.length,0);
+   assert.deepEqual((await db.query('SELECT id,contrato_id,monto,creado_en FROM pago')).rows,original);
+   assert.deepEqual(await migrateContratosProveedor(adapter()),{applied:true});
+   assert.equal(contratosProveedorPreparados(await assertPostgresReady(adapter())),true);
+   assert.equal((await db.query('SELECT proveedor_id FROM contrato_maquinaria')).rows[0].proveedor_id,provider);
+   assert.equal((await db.query('SELECT tipo_movimiento FROM pago')).rows[0].tipo_movimiento,'COBRO_CLIENTE');
+   assert.deepEqual((await db.query('SELECT id,contrato_id,monto,creado_en FROM pago')).rows,original);
+   await db.query('UPDATE maquinaria SET proveedor_id=NULL WHERE id=1');
+   assert.deepEqual(await migrateContratosProveedor(adapter()),{applied:false});
+   assert.equal((await db.query('SELECT proveedor_id FROM contrato_maquinaria')).rows[0].proveedor_id,provider);
+   await assert.rejects(migrateContratosProveedor({...adapter(),verifyConnection:async()=>({tls:{encrypted:false,authorized:false}})}),{code:'DATABASE_TLS_NOT_VERIFIED'});
  });
  await t.test('detecta una ampliación incompleta sin intentar repararla automáticamente',async()=>{
    await db.exec('ALTER TABLE pago DROP CONSTRAINT pago_destino_check');

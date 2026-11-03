@@ -216,8 +216,10 @@ export async function dashboard(ctx) {
       <div class="kpis">
         ${kpi({ label: 'Pedidos por aprobar', value: number(k.pedidos.PENDIENTE), foot: 'Responde en menos de 2 horas', ico: 'clipboard', feature: true })}
         ${kpi({ label: 'Entregas hoy', value: number(k.entregas_hoy), foot: 'Rentas que inician hoy', ico: 'truck' })}
+        <!--
         ${kpi({ label: 'Productos por moderar', value: number(k.por_moderar), foot: 'Publicaciones de proveedores', ico: 'shield' })}
         ${kpi({ label: 'Clientes activos', value: number(k.clientes), foot: `${number(k.proveedores)} proveedores activos`, ico: 'users' })}
+        -->
       </div>
       ${pipeline}
       ${staffQueue(data)}`;

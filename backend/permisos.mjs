@@ -24,15 +24,15 @@ const GERENTE = Object.freeze([...COMPARTIDOS,
   'contratos.modificaciones.autorizar',
 ]);
 const EMPLEADO = Object.freeze([...COMPARTIDOS, ...PORTAL_BASE,
-  'pedidos.gestionar', 'productos.consultar', 'productos.moderar', 'usuarios.crear']);
+  'pedidos.crear', 'cuentas.consultar', 'pedidos.gestionar', 'productos.consultar', 'productos.moderar', 'usuarios.crear']);
 const POR_ROL = Object.freeze({
   residente: COMPARTIDOS,
   gerente: GERENTE,
   cliente: Object.freeze([...PORTAL_BASE, 'pedidos.crear']),
-  proveedor: Object.freeze([...PORTAL_BASE, 'productos.consultar', 'productos.gestionar']),
+  proveedor: Object.freeze([...PORTAL_BASE, 'cuentas.consultar', 'productos.consultar', 'productos.gestionar']),
   empleado: EMPLEADO,
-  admin: Object.freeze([...new Set([...GERENTE, ...EMPLEADO,
-    'productos.gestionar', 'usuarios.administrar', 'configuracion.editar', 'auditoria.consultar', 'reportes.consultar'])]),
+  admin: Object.freeze([...new Set([...GERENTE, ...EMPLEADO.filter(p => p !== 'pedidos.crear'),
+    'cuentas.registrar', 'productos.gestionar', 'usuarios.administrar', 'configuracion.editar', 'auditoria.consultar', 'reportes.consultar'])]),
 });
 
 export const ROLES = Object.freeze(Object.keys(POR_ROL));
@@ -49,6 +49,9 @@ export function tienePermiso(rol, permiso) {
 // Cada operación tiene método, ruta completa y permiso explícitos. No hay
 // autorizaciones por prefijo que puedan habilitar nuevas acciones de contratos.
 const RUTAS = Object.freeze([
+  { operacion: 'portal.cuentas', metodo: 'GET', patron: /^\/api\/portal\/cuentas$/, permiso: 'cuentas.consultar' },
+  { operacion: 'portal.cuentas.movimientos', metodo: 'POST', patron: /^\/api\/portal\/cuentas\/movimientos$/, permiso: 'cuentas.registrar' },
+  { operacion: 'portal.cuentas.vincular', metodo: 'POST', patron: /^\/api\/portal\/cuentas\/vincular$/, permiso: 'cuentas.registrar' },
   { operacion: 'maquinaria.consultar', metodo: 'GET', patron: /^\/api\/maquinaria$/, permiso: 'maquinaria.consultar' },
   { operacion: 'reservas.consultar', metodo: 'GET', patron: /^\/api\/reservas\/ocupadas$/, permiso: 'maquinaria.consultar' },
   { operacion: 'contratos.crear', metodo: 'POST', patron: /^\/api\/contratos$/, permiso: 'contratos.crear' },

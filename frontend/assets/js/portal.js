@@ -5,6 +5,7 @@ import { catalog, productDetail, cartView } from './views/tienda.js';
 import { ordersList, orderDetail } from './views/pedidos.js';
 import { productsList, productEditor, moderation } from './views/productos.js';
 import { usersView, ratesView, auditView, profileView } from './views/gestion.js';
+import { accountsView } from './views/cuentas.js';
 
 const shell = document.getElementById('shell');
 const sidebar = document.getElementById('sidebar');
@@ -13,6 +14,7 @@ let view = document.getElementById('view');
 
 // Rutas del portal: cada una declara el permiso que necesita.
 const ROUTES = [
+  { path: /^\/cuentas$/, render: accountsView, permiso: 'cuentas.consultar', title: 'Estado de cuenta' },
   { path: /^\/inicio$/, render: dashboard, title: 'Inicio' },
   { path: /^\/catalogo$/, render: catalog, permiso: 'tienda.consultar', title: 'Catálogo' },
   { path: /^\/producto\/(\d+)$/, render: productDetail, permiso: 'tienda.consultar', title: 'Equipo' },
@@ -35,12 +37,14 @@ const NAV = {
     ] },
   ],
   proveedor: [
+    { group: 'Finanzas', items: [['cuentas', 'clipboard', 'Mi estado de cuenta']] },
     { group: 'Mi tienda', items: [
       ['inicio', 'home', 'Resumen'], ['productos', 'package', 'Mis productos'], ['productos/nuevo', 'plus', 'Agregar producto'], ['pedidos', 'clipboard', 'Pedidos'],
     ] },
     { group: 'Mercado', items: [['catalogo', 'store', 'Catálogo público']] },
   ],
   empleado: [
+    { group: 'Alquileres de Constructora', items: [['catalogo', 'store', 'Contratar maquinaria'], ['carrito', 'cart', 'Carrito', 'cart'], ['pedidos?empresa=true', 'clipboard', 'Alquileres de la empresa'], ['cuentas', 'clipboard', 'Estado de cuenta de la empresa']] },
     { group: 'Operación', items: [
       ['inicio', 'home', 'Panel de operación'], ['pedidos', 'clipboard', 'Pedidos', 'pending'], ['moderacion', 'shield', 'Moderación', 'moderation'],
       ['productos', 'package', 'Inventario'],
@@ -49,6 +53,7 @@ const NAV = {
     { group: 'Mercado', items: [['catalogo', 'store', 'Catálogo'], ['/', 'hardhat', 'Contratos de obra', null, true]] },
   ],
   admin: [
+    { group: 'Finanzas', items: [['cuentas', 'clipboard', 'Cuentas por cobrar y pagar']] },
     { group: 'Dirección', items: [['inicio', 'home', 'Panel ejecutivo'], ['pedidos', 'clipboard', 'Pedidos', 'pending'], ['productos', 'package', 'Productos'],
       ['moderacion', 'shield', 'Moderación', 'moderation']] },
     { group: 'Gobierno', items: [['usuarios', 'users', 'Usuarios y roles'], ['tasas', 'percent', 'Tasas'], ['auditoria', 'history', 'Auditoría']] },
@@ -74,7 +79,7 @@ function renderSidebar() {
   const current = (location.hash.replace(/^#\//, '') || 'inicio').split('?')[0];
   const groups = NAV[ctx.user.rol] || [];
   // El enlace más específico que contiene la ruta actual queda resaltado.
-  const matches = (path) => current === path || current.startsWith(`${path}/`) ||
+  const matches = (path) => (path.includes('?') && current === path.split('?')[0] && new URLSearchParams(location.hash.split('?')[1]).get('empresa') === 'true') || current === path || current.startsWith(`${path}/`) ||
     (path === 'pedidos' && current.startsWith('pedido/')) || (path === 'catalogo' && current.startsWith('producto/'));
   const activePath = groups.flatMap((group) => group.items.map((item) => item[0]))
     .filter(matches).sort((a, b) => b.length - a.length)[0];

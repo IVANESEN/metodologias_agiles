@@ -1,4 +1,7 @@
 -- Sprint 0: esquema compartido por PostgreSQL y PGlite.
+-- La preparación aplica también database/migrations/20261102_estados_cuenta.sql
+-- mediante applyCompatibilityConstraints. Conserva los pagos históricos y
+-- amplía pago, pedido y contrato sin crear tablas adicionales.
 CREATE TABLE IF NOT EXISTS maquinaria (
   id INTEGER PRIMARY KEY,
   nombre VARCHAR(120) NOT NULL,

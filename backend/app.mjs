@@ -257,7 +257,7 @@ async function contractAccount(database, id) {
 
 export async function findPendingAccounts(database) {
   const { rows } = await database.query(`${ACCOUNT_QUERY}
-    GROUP BY c.id HAVING c.total > COALESCE(SUM(p.monto), 0) ORDER BY c.creado_en, c.id`);
+    WHERE c.pedido_id IS NULL GROUP BY c.id HAVING c.total > COALESCE(SUM(p.monto), 0) ORDER BY c.creado_en, c.id`);
   return rows.map(accountNumbers);
 }
 
@@ -391,8 +391,9 @@ export async function savePayment(database, contractId, input) {
   return database.transaction(async (tx) => {
     // All payments for a contract serialize on its header. At READ COMMITTED the
     // subsequent aggregate sees the previous writer's commit before accepting.
-    const locked = await tx.query('SELECT id FROM contrato WHERE id = $1 FOR UPDATE', [contractId]);
+    const locked = await tx.query('SELECT id,pedido_id FROM contrato WHERE id = $1 FOR UPDATE', [contractId]);
     if (!locked.rows[0]) throw new ApiError(404, 'CONTRACT_NOT_FOUND', 'No se encontró el contrato.');
+    if (locked.rows[0].pedido_id) throw new ApiError(409, 'CONTRACT_LINKED', 'Registra el cobro desde el estado de cuenta del pedido vinculado.');
     const existing = await tx.query(
       'SELECT id, contrato_id, monto, creado_en::text FROM pago WHERE id = $1', [input.id],
     );

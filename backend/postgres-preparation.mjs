@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { applyCuentasSchema, cuentasPreparadas } from './cuentas-migracion.mjs';
 
 const APP_TABLES = [
   'maquinaria',
@@ -281,6 +282,9 @@ export async function inspectPostgresDatabase(database) {
 
 function checkInventory(inventory, schema, { current = false, existingReviewed = false,
   pendingReajustes = false } = {}) {
+  if (inventory.appTables.find(t=>t.name==='pago')?.columns.some(c=>c.name==='tipo_movimiento') && !cuentasPreparadas(inventory)) {
+    fail('INCOMPATIBLE_EXISTING_TABLES','La ampliación de cuentas no tiene las columnas, claves o restricciones requeridas. Revisa el esquema antes de continuar.');
+  }
   if (inventory.visibleDataApiSchemas.includes(schema)) {
     fail('SCHEMA_EXPOSED_TO_DATA_API', 'El esquema de la aplicación está expuesto por la Data API. Retíralo de Exposed schemas antes de continuar.');
   }
@@ -362,7 +366,8 @@ function checkInventory(inventory, schema, { current = false, existingReviewed =
         'Las tablas de autenticación requieren datos obligatorios, identificadores únicos y relaciones protegidas.');
     }
     if (table.name === 'pago') {
-      const requiredNotNull = Object.keys(LEGACY_COLUMNS.pago).every((name) =>
+      const cuentas = table.constraints.some(c => c.name === 'pago_destino_check' && c.validated);
+      const requiredNotNull = Object.keys(LEGACY_COLUMNS.pago).filter(name => name !== 'contrato_id' || !cuentas).every((name) =>
         table.columns.some((column) => column.name === name && column.notNull));
       const positiveAmount = table.constraints.some((constraint) => constraint.type === 'c' &&
         constraint.validated && sameColumns(constraint.columns, ['monto']) &&
@@ -541,6 +546,7 @@ export async function applyCompatibilityConstraints(tx, schema) {
       ALTER TABLE ${prefix}${table} ADD CONSTRAINT ${table}_${column}_check
         CHECK (${column} IN (${values.map((value) => `'${value}'`).join(', ')}));`);
   }
+  await applyCuentasSchema(tx);
 }
 
 /** Explicit preparation: inspect first, refuse ambiguity, retain existing rows. */

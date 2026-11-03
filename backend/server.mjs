@@ -3,6 +3,7 @@ import { createDatabase, initializeDatabase, safeDatabaseError } from './databas
 import { assertPostgresReady } from './postgres-preparation.mjs';
 import { loadDemoData } from './demo-data.mjs';
 import { createMailer } from './mailer.mjs';
+import { cuentasPreparadas } from './cuentas-migracion.mjs';
 
 const configuredPort = process.env.PORT || process.env.SERVER_PORT || '3000';
 const port = Number(configuredPort);
@@ -21,7 +22,8 @@ if (!Number.isInteger(port) || port < 0 || port > 65_535) {
       if (process.env.DEMO_DATA !== 'false') await loadDemoData(database);
     } else {
       await database.verifyConnection();
-      await assertPostgresReady(database);
+      const inventory = await assertPostgresReady(database);
+      if (!cuentasPreparadas(inventory)) throw new Error('Ejecuta db:migrate antes de iniciar esta versión.');
     }
     server = createServer({ database, requireAuth: true, mailer: createMailer() });
     await new Promise((resolve, reject) => {

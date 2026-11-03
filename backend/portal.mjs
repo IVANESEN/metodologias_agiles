@@ -11,6 +11,7 @@ import { FORMAS_PAGO } from './contrato-legal.mjs';
 import { hoyElSalvador } from './contratos-por-vencer.mjs';
 import { dateRangesOverlap, occupiedRanges, rentalEligibility, rentalEligibilitySql, unoccupiedSql } from './alquiler-reglas.mjs';
 import { validarFotografia } from './imagenes.mjs';
+import { readAccounts, registerMovement, linkContract } from './cuentas.mjs';
 
 const MAX_PRODUCT_BODY_BYTES = 7_400_000;
 const MAX_IMAGE_BYTES = 1_100_000;
@@ -438,12 +439,12 @@ async function createOrder(db, user, body) {
     const id = randomUUID();
     const t = quote.totales;
     await tx.query(`INSERT INTO pedido (id, numero, cliente_id, tipo, ciudad, direccion, metodo_pago, notas,
-      subtotal, descuento, operador, flete, iva, deposito, total, tasas)
+      subtotal, descuento, operador, flete, iva, deposito, total, tasas, es_empresa)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11::numeric, $12::numeric, $13::numeric,
-      $14::numeric, $15::numeric, $16::jsonb)`,
+      $14::numeric, $15::numeric, $16::jsonb, $17)`,
     [id, Number(rows[0].next), user.id, quote.tipo, checkout.ciudad, checkout.direccion, checkout.metodo_pago, checkout.notas,
       fixed(t.subtotal), fixed(t.descuento), fixed(t.operador), fixed(t.flete), fixed(t.iva), fixed(t.deposito), fixed(t.total),
-      JSON.stringify(quote.tasas)]);
+      JSON.stringify(quote.tasas), user.rol === 'empleado']);
     for (const line of quote.items) {
       await tx.query(`INSERT INTO pedido_item (id, pedido_id, maquinaria_id, nombre, proveedor_id, modalidad, cantidad,
         fecha_inicio, fecha_fin, dias, con_operador, precio_unitario, subtotal)
@@ -475,11 +476,12 @@ function orderScope(user, values) {
 async function listOrders(db, user, params) {
   const values = [];
   const where = [orderScope(user, values)];
+  if (params.get('empresa') === 'true' && STAFF.includes(user.rol)) where.push('p.es_empresa');
   const estado = params.get('estado');
   if (ESTADOS_PEDIDO.includes(estado)) { values.push(estado); where.push(`p.estado = $${values.length}`); }
   let providerFilter = '';
   if (user.rol === 'proveedor') { values.push(user.id); providerFilter = `AND i.proveedor_id = $${values.length}::uuid`; }
-  const { rows } = await db.query(`SELECT p.id, p.numero, p.tipo, p.estado, p.total, p.ciudad, p.creado_en::text,
+  const { rows } = await db.query(`SELECT p.id, p.numero, p.tipo, p.estado, p.total, p.ciudad, p.es_empresa, p.creado_en::text,
       p.actualizado_en::text, u.nombre AS cliente, u.empresa AS cliente_empresa,
       (SELECT COUNT(*)::int FROM pedido_item i WHERE i.pedido_id = p.id ${providerFilter}) AS equipos,
       (SELECT COALESCE(SUM(i.subtotal), 0) FROM pedido_item i WHERE i.pedido_id = p.id ${providerFilter}) AS subtotal_items,
@@ -509,6 +511,7 @@ async function orderDetail(db, user, id) {
   const comision = Number(order.tasas?.comision_proveedor ?? 0);
   const result = {
     id: order.id, numero: order.numero, numero_visible: `PED-${order.numero}`, tipo: order.tipo, estado: order.estado,
+    es_empresa: order.es_empresa,
     ciudad: order.ciudad, direccion: order.direccion, metodo_pago: order.metodo_pago,
     metodo_pago_texto: PAGOS[order.metodo_pago] || order.metodo_pago, notas: order.notas, motivo: order.motivo,
     creado_en: order.creado_en, actualizado_en: order.actualizado_en, atendido_por: order.atendido_por_nombre,
@@ -559,6 +562,9 @@ async function changeOrderState(db, user, id, nuevo, nota) {
       }
     }
     if (['CANCELADO', 'RECHAZADO'].includes(nuevo)) {
+      if ((await tx.query('SELECT id FROM pago WHERE pedido_id=$1 LIMIT 1', [id])).rows.length) {
+        fail(409, 'ORDER_HAS_PAYMENTS', 'El pedido tiene movimientos registrados; requiere una conciliación antes de cancelarlo.');
+      }
       await tx.query(`UPDATE maquinaria m SET stock = m.stock + i.cantidad FROM pedido_item i
         WHERE i.pedido_id = $1 AND i.modalidad = 'COMPRA' AND m.id = i.maquinaria_id`, [id]);
     }
@@ -718,7 +724,7 @@ async function dashboard(db, user) {
       clientes: await count("SELECT COUNT(*) AS total FROM usuario WHERE rol = 'cliente' AND activo"),
       proveedores: await count("SELECT COUNT(*) AS total FROM usuario WHERE rol = 'proveedor' AND activo"),
       catalogo: await count("SELECT COUNT(*) AS total FROM maquinaria WHERE estado_publicacion = 'ACTIVO' AND disponible"),
-      ingresos: await count("SELECT COALESCE(SUM(total - deposito), 0) AS total FROM pedido WHERE estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO')"),
+      ingresos: await count("SELECT COALESCE(SUM(total - deposito), 0) AS total FROM pedido WHERE NOT es_empresa AND estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO')"),
       entregas_hoy: await count(`SELECT COUNT(*) AS total FROM pedido_item i JOIN pedido p ON p.id = i.pedido_id
         WHERE p.estado IN ('APROBADO','EN_ENTREGA') AND i.fecha_inicio = $1::date`, [hoyElSalvador()]),
     };
@@ -735,7 +741,7 @@ async function reports(db) {
   const { rows: meses } = await db.query(`SELECT to_char(date_trunc('month', creado_en), 'YYYY-MM') AS mes,
       COALESCE(SUM(total - deposito) FILTER (WHERE estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO')), 0) AS ingresos,
       COUNT(*)::int AS pedidos
-    FROM pedido WHERE creado_en >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '5 months'
+    FROM pedido WHERE NOT es_empresa AND creado_en >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '5 months'
     GROUP BY 1 ORDER BY 1`);
   const series = [];
   const now = new Date();
@@ -747,11 +753,11 @@ async function reports(db) {
   }
   const { rows: categorias } = await db.query(`SELECT m.tipo, COALESCE(SUM(i.subtotal), 0) AS monto, COUNT(i.id)::int AS lineas
     FROM pedido_item i JOIN pedido p ON p.id = i.pedido_id JOIN maquinaria m ON m.id = i.maquinaria_id
-    WHERE p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO') GROUP BY m.tipo ORDER BY monto DESC LIMIT 6`);
+    WHERE NOT p.es_empresa AND p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO') GROUP BY m.tipo ORDER BY monto DESC LIMIT 6`);
   const { rows: roles } = await db.query('SELECT rol, COUNT(*)::int AS total FROM usuario GROUP BY rol ORDER BY rol');
   const { valores } = await readConfig(db);
   const proveedores = Number((await db.query(`SELECT COALESCE(SUM(i.subtotal), 0) AS total FROM pedido_item i
-    JOIN pedido p ON p.id = i.pedido_id WHERE i.proveedor_id IS NOT NULL AND p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO')`)).rows[0].total);
+    JOIN pedido p ON p.id = i.pedido_id WHERE NOT p.es_empresa AND i.proveedor_id IS NOT NULL AND p.estado IN ('APROBADO','EN_ENTREGA','COMPLETADO','FINALIZADO','DEVUELTO')`)).rows[0].total);
   return {
     series, roles,
     categorias: categorias.map((row) => ({ ...row, monto: Number(row.monto) })),
@@ -781,6 +787,9 @@ export async function handlePortalRoute(context) {
   guardPermission({ user }, ruta.permiso);
   const [param, extra] = ruta.parametros;
   switch (ruta.operacion) {
+    case 'portal.cuentas': return json(response, 200, await readAccounts(database, user));
+    case 'portal.cuentas.movimientos': return json(response, 200, await registerMovement(database, user, await readJson(request)));
+    case 'portal.cuentas.vincular': return json(response, 200, await linkContract(database, user, await readJson(request)));
     case 'portal.resumen': return json(response, 200, await dashboard(database, user));
     case 'portal.reportes': return json(response, 200, await reports(database));
     case 'portal.configuracion.consultar': {

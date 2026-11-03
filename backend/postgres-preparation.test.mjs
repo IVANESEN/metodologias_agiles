@@ -130,7 +130,8 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
     for (const amount of ['0', '-1']) {
       await assert.rejects(insertPayment('00000000-0000-4000-8000-000000000003', contractId, amount), { code: '23514' });
     }
-    await assert.rejects(insertPayment('00000000-0000-4000-8000-000000000003', null, '1'), { code: '23502' });
+    // Ahora contrato puede ser NULL únicamente si hay un pedido válido; el CHECK de destino impide un pago huérfano.
+    await assert.rejects(insertPayment('00000000-0000-4000-8000-000000000003', null, '1'), { code: '23514' });
     await assert.rejects(insertPayment('00000000-0000-4000-8000-000000000003',
       '00000000-0000-4000-8000-000000000099', '1'), { code: '23503' });
     await assert.rejects(embedded.query('DELETE FROM constructora_private.contrato WHERE id=$1', [contractId]), { code: '23001' });
@@ -270,8 +271,8 @@ test('preparación y privacidad PostgreSQL: SQL real en PGlite aislado; evidenci
   });
   await t.test('pagos exige restricciones exactas antes de aceptar o migrar una tabla existente', async () => {
     const cases = [
-      ['ALTER TABLE constructora_private.pago ALTER COLUMN contrato_id DROP NOT NULL;',
-        'ALTER TABLE constructora_private.pago ALTER COLUMN contrato_id SET NOT NULL;'],
+      ['ALTER TABLE constructora_private.pago ALTER COLUMN tipo_movimiento DROP NOT NULL;',
+        'ALTER TABLE constructora_private.pago ALTER COLUMN tipo_movimiento SET NOT NULL;'],
       ['ALTER TABLE constructora_private.pago ALTER COLUMN creado_en DROP DEFAULT;',
         'ALTER TABLE constructora_private.pago ALTER COLUMN creado_en SET DEFAULT CURRENT_TIMESTAMP;'],
       ['ALTER TABLE constructora_private.pago DROP CONSTRAINT pago_monto_check; ALTER TABLE constructora_private.pago ADD CONSTRAINT pago_monto_check CHECK (monto >= 0);',
